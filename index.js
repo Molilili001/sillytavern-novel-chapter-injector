@@ -16,6 +16,8 @@
   'use strict';
 
   const MODULE_NAME = 'novel-chapter-injector';
+  // 酒馆 Git 导入时，扩展目录名 = 仓库名。此值必须与实际安装目录一致，否则模板读不到。
+  const EXTENSION_FOLDER_NAME = 'sillytavern-novel-chapter-injector';
   const STATE_KEY = MODULE_NAME + ':state';
 
   // —— 默认设置 ——
@@ -203,9 +205,9 @@
   async function renderPanel() {
     if (!renderExtensionTemplateAsync) return;
     const settings = getSettings();
-    // [RUNTIME-CHECK] renderExtensionTemplateAsync 的路径与模板名按实际安装目录确认。
+    // 模板是 Handlebars 语法（{{var}}），路径用扩展目录名。
     const html = await renderExtensionTemplateAsync(
-      'third-party/' + MODULE_NAME,
+      'third-party/' + EXTENSION_FOLDER_NAME,
       'settings',
       {
         variableName: settings.variableName,
