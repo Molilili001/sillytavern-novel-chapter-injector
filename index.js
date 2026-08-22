@@ -166,7 +166,7 @@
       state.chapters = splitChapters(text);
       state.index = 0;
       await saveChapters();
-      renderStatus('已导入 ' + state.chapters.length + ' 章');
+      renderStatus('已导入 ' + state.chapters.length + ' ' + unitWord());
       renderChapterPreview();
     };
     reader.onerror = () => renderStatus('读取文件失败');
@@ -221,7 +221,7 @@
     }
     const start = state.index;
     if (start >= state.chapters.length) {
-      renderStatus('已读完最后一章');
+      renderStatus('已读完最后一' + unitWord());
       return;
     }
     let size = Number(getSettings().batchSize);
@@ -239,7 +239,7 @@
       state.index = newIdx;
       await saveChapters();
       await writeIndexToVariable(newIdx);
-      renderStatus('已注入第 ' + (start + 1) + ' ~ ' + newIdx + ' 章（共 ' + batch.length + ' 章）');
+      renderStatus('已注入第 ' + (start + 1) + ' ~ ' + newIdx + ' ' + unitWord() + '（共 ' + batch.length + ' ' + unitWord() + '）');
       renderChapterPreview();
     }
   }
@@ -254,6 +254,11 @@
       return Promise.resolve(renderExtensionTemplate(folderPath, templateName, data));
     }
     return Promise.reject(new Error('renderExtensionTemplate 不可用'));
+  }
+
+  // —— 单位词：章节模式叫「章」，字数模式叫「段」——
+  function unitWord() {
+    return getSettings().splitMode === 'char' ? '段' : '章';
   }
 
   // —— 面板渲染 ——
@@ -291,7 +296,7 @@
     bindEvents();
     await loadChapters();
     if (state.chapters.length) {
-      renderStatus('已恢复 ' + state.chapters.length + ' 章（当前第 ' + (state.index + 1) + ' 章）');
+      renderStatus('已恢复 ' + state.chapters.length + ' ' + unitWord() + '（当前第 ' + (state.index + 1) + ' ' + unitWord() + '）');
     } else {
       renderStatus('未导入');
     }

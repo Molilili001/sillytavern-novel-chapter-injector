@@ -17,7 +17,7 @@
 
   <div class="nci-step">
     <div class="nci-step-title">② 变量名（预设里读取用）</div>
-    <div class="nci-desc">当前章内容会写入这个<b>聊天局部变量</b>（每张聊天独立）。之后在预设里写 <code>{{getvar::变量名}}</code> 就能读到当前章正文。</div>
+    <div class="nci-desc">当前这一段内容会写入这个<b>聊天局部变量</b>（每张聊天独立）。之后在预设里写 <code>{{getvar::变量名}}</code> 就能读到当前段正文。</div>
     <input type="text" id="nci-var" class="text_pole" value="{{variableName}}">
   </div>
 
@@ -47,16 +47,16 @@
     </div>
     <div class="nci-desc">记录「读到第几章」的变量名，别跟上面的章节变量名重名。</div>
     <div class="nci-row">
-      <label>每次注入章数</label>
+      <label>每次注入段数</label>
       <input type="number" id="nci-batch" class="text_pole" value="{{batchSize}}" min="1" step="1">
     </div>
-    <div class="nci-desc">一次注入几章，比如填 3 就把 3 章拼在一起写入变量、进度一次跳 3 章。</div>
+    <div class="nci-desc">一次注入几段，比如填 3 就把 3 段拼在一起写入变量、进度一次跳 3 段。章节模式下「段」就是「章」。</div>
   </div>
 
   <div class="nci-step">
     <div class="nci-step-title">③ 推进剧情</div>
-    <div class="nci-desc">导入后点下面的按钮，把第一章写入变量；每轮请求后会自动推进（自动事件绑定需运行时确认）。</div>
-    <button id="nci-next" class="menu_button">▶ 手动注入下一章</button>
+    <div class="nci-desc">导入后点下面的按钮，把第一段写入变量；每轮请求后会自动推进（自动事件绑定需运行时确认）。</div>
+    <button id="nci-next" class="menu_button">▶ 手动注入下一段</button>
   </div>
 
   <div class="nci-status" id="nci-status">未导入</div>
