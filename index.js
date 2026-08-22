@@ -5,6 +5,10 @@
  * 功能：导入一个 txt 小说，按第X章切分；每轮请求后（或手动触发），
  *       把当前章节内容写入「聊天局部变量」，供预设里用 {{getvar::变量名}} 读取。
  *
+ * 持久化策略（重启不丢）：
+ *   - 章节数组 + 进度：存进 extensionSettings[MODULE_NAME]，随酒馆 settings.json 落到服务器。
+ *   - 当前章内容 + 进度：写进聊天局部变量 chatMetadata.variables，供 {{getvar::}} 读取。
+ *
  * 变量写入走 SillyTavern 核心的 STScript 聊天局部变量：
  *   getContext().chatMetadata.variables[name] = value，然后 saveMetadata()。
  *   {{getvar::name}} 读的就是这个存储（官方权威依据：SillyTavern/Extension-Variables 示例插件）。
@@ -19,7 +23,6 @@
   const MODULE_NAME = 'novel-chapter-injector';
   // 酒馆 Git 导入时，扩展目录名 = 仓库名。此值必须与实际安装目录一致，否则模板读不到。
   const EXTENSION_FOLDER_NAME = 'sillytavern-novel-chapter-injector';
-  const STATE_KEY = MODULE_NAME + ':state';
 
   // —— 默认设置 ——
   const DEFAULT_SETTINGS = Object.freeze({
@@ -39,7 +42,7 @@
   let saveSettingsDebounced = null;
   let saveMetadata = null;
 
-  // —— 运行时状态（章节数组可能很大，单独存 localStorage）——
+  // —— 运行时状态 ——
   const state = {
     chapters: [],
     index: 0,
@@ -62,27 +65,20 @@
     if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
   }
 
-  // —— 状态读写（localStorage 兜底，只存章节数组和索引）——
-  function loadState() {
-    try {
-      const raw = localStorage.getItem(STATE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        state.chapters = s.chapters || [];
-        state.index = s.index || 0;
-      }
-    } catch (e) {
-      state.chapters = [];
-      state.index = 0;
+  // —— 章节持久化：存进 extensionSettings，随 settings.json 落到服务器 ——
+  function loadChapters() {
+    const s = getSettings();
+    if (Array.isArray(s._chapters) && s._chapters.length) {
+      state.chapters = s._chapters;
+      state.index = Number(s._index) || 0;
     }
   }
 
-  function saveState() {
-    try {
-      localStorage.setItem(STATE_KEY, JSON.stringify(state));
-    } catch (e) {
-      /* localStorage 满或不可用时静默降级到内存 */
-    }
+  function saveChapters() {
+    const s = getSettings();
+    s._chapters = state.chapters;
+    s._index = state.index;
+    persistSettings();
   }
 
   // —— 章节切分 ——
@@ -103,7 +99,7 @@
       const text = String(reader.result || '');
       state.chapters = splitChapters(text);
       state.index = 0;
-      saveState();
+      saveChapters();
       renderStatus('已导入 ' + state.chapters.length + ' 章');
       renderChapterPreview();
     };
@@ -140,13 +136,6 @@
     }
   }
 
-  async function readIndexFromVariable() {
-    const vars = getChatVariables();
-    if (!vars) return state.index;
-    const n = Number(vars[getSettings().indexVariableName]);
-    return Number.isFinite(n) ? n : state.index;
-  }
-
   async function writeIndexToVariable(idx) {
     try {
       const vars = getChatVariables();
@@ -164,7 +153,7 @@
       renderStatus('尚未导入小说');
       return;
     }
-    let idx = await readIndexFromVariable();
+    let idx = state.index;
     if (idx >= state.chapters.length) {
       renderStatus('已读完最后一章');
       return;
@@ -174,7 +163,7 @@
     if (ok) {
       idx += 1;
       state.index = idx;
-      saveState();
+      saveChapters();
       await writeIndexToVariable(idx);
       renderStatus('已注入第 ' + idx + ' / ' + state.chapters.length + ' 章');
       renderChapterPreview();
@@ -211,8 +200,12 @@
     target.insertAdjacentHTML('beforeend', html);
 
     bindEvents();
-    loadState();
-    renderStatus('未导入');
+    loadChapters();
+    if (state.chapters.length) {
+      renderStatus('已恢复 ' + state.chapters.length + ' 章（当前第 ' + (state.index + 1) + ' 章）');
+    } else {
+      renderStatus('未导入');
+    }
     renderChapterPreview();
   }
 

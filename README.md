@@ -25,6 +25,12 @@
 
 4. 每轮请求后自动推进（事件绑定需在运行时确认，见下）。
 
+## 持久化机制（重启不丢）
+
+章节数组与进度存进扩展设置（`extensionSettings`），随酒馆的 `settings.json` 落到服务器，重启后自动恢复，无需重新导入。
+
+当前章内容与进度另写入聊天局部变量（`chatMetadata.variables`），供预设里 `{{getvar::}}` 读取。
+
 ## 变量机制（为什么之前读不到）
 
 `{{getvar::name}}` 读的是酒馆核心的**聊天局部变量**，存储位置是 `getContext().chatMetadata.variables[name]`。本扩展就是往这个存储里写，所以预设里 `{{getvar::name}}` 能直接读到。
