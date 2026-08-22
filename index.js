@@ -328,7 +328,9 @@
       extensionSettings = context.extensionSettings;
       saveSettingsDebounced = context.saveSettingsDebounced;
       saveMetadata = context.saveMetadata;
-      localforage = context.libs && context.libs.localforage;
+      // [重要] localforage 挂在 SillyTavern.libs 全局对象上，不在 getContext() 返回里。
+      // 官方文档：const { localforage } = SillyTavern.libs;
+      localforage = window.SillyTavern && window.SillyTavern.libs && window.SillyTavern.libs.localforage;
       eventSource = context.eventSource;
       eventTypes = context.event_types;
     } catch (e) {
