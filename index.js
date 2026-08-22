@@ -158,11 +158,22 @@
     return chunks.filter(Boolean);
   }
 
-  // —— 文件导入 ——
+  // —— 文件导入（支持自动嗅探 GBK / UTF-8）——
   function importFile(file) {
     const reader = new FileReader();
     reader.onload = async () => {
-      const text = String(reader.result || '');
+      const buffer = reader.result;
+      let text = '';
+      try {
+        // 优先尝试严格 UTF-8 解码。如果遇到非法字节会抛错，直接跳到 catch
+        const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+        text = utf8Decoder.decode(buffer);
+      } catch (e) {
+        // 报 fatal 错说明不是纯净 UTF-8，大概率是 GBK/GB2312（国内网文通病）
+        const gbkDecoder = new TextDecoder('gbk');
+        text = gbkDecoder.decode(buffer);
+      }
+
       state.chapters = splitChapters(text);
       state.index = 0;
       await saveChapters();
@@ -170,7 +181,8 @@
       renderChapterPreview();
     };
     reader.onerror = () => renderStatus('读取文件失败');
-    reader.readAsText(file, 'utf-8');
+    // 核心：改用 readAsArrayBuffer，不让浏览器瞎猜编码，自己拿原始字节解码
+    reader.readAsArrayBuffer(file);
   }
 
   // —— 变量读写（写 STScript 聊天局部变量：chatMetadata.variables）——
