@@ -1,0 +1,29 @@
+.nci-header {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.nci-row {
+  margin-bottom: 6px;
+}
+.nci-row label {
+  display: inline-block;
+  min-width: 64px;
+}
+.nci-row input[type="text"],
+.nci-row select {
+  width: 180px;
+}
+.nci-status {
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+.nci-preview {
+  margin-top: 6px;
+  max-height: 120px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+  padding-top: 6px;
+}

@@ -1,0 +1,11 @@
+{
+  "display_name": "小说章节自动注入器",
+  "loading_order": 100,
+  "js": "index.js",
+  "css": "style.css",
+  "author": "菲林 (Feilin)",
+  "version": "0.1.0",
+  "homePage": "",
+  "auto_update": false,
+  "minimum_client_version": "1.18.0"
+}
