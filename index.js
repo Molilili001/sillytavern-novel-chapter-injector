@@ -29,7 +29,7 @@
     // 分割模式：'chapter' 按章节切，'char' 按字数切
     splitMode: 'char',
     // 字数分割模式下每段多少字
-    splitSize: 6000,
+    splitSize: 10000,
     // 章节分隔符：'第' 表示按行首「第X章/回/卷/部」切
     chapterSeparator: '第',
     // 目标变量名（章节内容写入这里，供 {{getvar::变量名}} 读取）
@@ -126,7 +126,7 @@
   // 字数模式：按目标字数切，尽量在句末/换行处断开，避免拦腰斩句
   function splitBySize(text) {
     let size = Number(getSettings().splitSize);
-    if (!Number.isFinite(size) || size < 1) size = 6000;
+    if (!Number.isFinite(size) || size < 1) size = 10000;
     size = Math.floor(size);
 
     const clean = text.replace(/\r\n/g, '\n').trim();
@@ -339,10 +339,10 @@
       });
     }
     if (splitSizeInput) {
-      splitSizeInput.value = String(getSettings().splitSize || 6000);
+      splitSizeInput.value = String(getSettings().splitSize || 10000);
       splitSizeInput.addEventListener('change', () => {
         let n = Number(splitSizeInput.value);
-        if (!Number.isFinite(n) || n < 1) n = 6000;
+        if (!Number.isFinite(n) || n < 1) n = 10000;
         getSettings().splitSize = Math.floor(n);
         persistSettings();
       });
