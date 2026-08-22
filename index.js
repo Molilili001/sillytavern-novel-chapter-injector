@@ -40,6 +40,7 @@
 
   let ctx = null;
   let renderExtensionTemplateAsync = null;
+  let renderExtensionTemplate = null; // 同步版 fallback（低版本兼容）
   let extensionSettings = null;
   let saveSettingsDebounced = null;
   let saveMetadata = null;
@@ -195,6 +196,18 @@
     }
   }
 
+  // —— 模板渲染兼容层：优先 async，低版本退回同步版 ——
+  function renderTemplate(folderPath, templateName, data) {
+    if (typeof renderExtensionTemplateAsync === 'function') {
+      return renderExtensionTemplateAsync(folderPath, templateName, data);
+    }
+    if (typeof renderExtensionTemplate === 'function') {
+      // 同步版已 deprecated，但老版本只有它。返回 Promise 统一调用方式。
+      return Promise.resolve(renderExtensionTemplate(folderPath, templateName, data));
+    }
+    return Promise.reject(new Error('renderExtensionTemplate 不可用'));
+  }
+
   // —— 面板渲染 ——
   function renderStatus(msg) {
     const el = document.getElementById('nci-status');
@@ -209,10 +222,10 @@
   }
 
   async function renderPanel() {
-    if (!renderExtensionTemplateAsync) return;
+    if (!renderExtensionTemplateAsync && !renderExtensionTemplate) return;
     const settings = getSettings();
     // 模板是 Handlebars 语法（{{var}}），路径用扩展目录名。
-    const html = await renderExtensionTemplateAsync(
+    const html = await renderTemplate(
       'third-party/' + EXTENSION_FOLDER_NAME,
       'settings',
       {
@@ -325,6 +338,7 @@
         : {};
       ctx = context;
       renderExtensionTemplateAsync = context.renderExtensionTemplateAsync;
+      renderExtensionTemplate = context.renderExtensionTemplate;
       extensionSettings = context.extensionSettings;
       saveSettingsDebounced = context.saveSettingsDebounced;
       saveMetadata = context.saveMetadata;

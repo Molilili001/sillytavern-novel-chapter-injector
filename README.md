@@ -4,7 +4,7 @@
 
 ## 依赖
 
-- SillyTavern >= 1.18.0
+- SillyTavern >= 1.13.0（含低版本兼容层，优先用 async 模板 API，缺失时退回同步版）
 - 无第三方扩展依赖。聊天局部变量是酒馆核心自带（`chatMetadata.variables`）。
 
 ## 安装
