@@ -41,6 +41,7 @@
   let extensionSettings = null;
   let saveSettingsDebounced = null;
   let saveMetadata = null;
+  let localforage = null;
 
   // —— 运行时状态 ——
   const state = {
@@ -65,20 +66,31 @@
     if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
   }
 
-  // —— 章节持久化：存进 extensionSettings，随 settings.json 落到服务器 ——
-  function loadChapters() {
-    const s = getSettings();
-    if (Array.isArray(s._chapters) && s._chapters.length) {
-      state.chapters = s._chapters;
-      state.index = Number(s._index) || 0;
+  // —— 章节持久化：存 localforage（官方推荐的大块数据存储，IndexedDB）——
+  // 官方文档明确禁止往 extensionSettings 塞大块数据，应改用 localforage。
+  // 存 localforage 独立于 settings.json，重启不丢，容量大。
+  async function loadChapters() {
+    if (!localforage) return;
+    try {
+      const chapters = await localforage.getItem(MODULE_NAME + ':chapters');
+      const index = await localforage.getItem(MODULE_NAME + ':index');
+      if (Array.isArray(chapters) && chapters.length) {
+        state.chapters = chapters;
+        state.index = Number(index) || 0;
+      }
+    } catch (e) {
+      /* 静默 */
     }
   }
 
-  function saveChapters() {
-    const s = getSettings();
-    s._chapters = state.chapters;
-    s._index = state.index;
-    persistSettings();
+  async function saveChapters() {
+    if (!localforage) return;
+    try {
+      await localforage.setItem(MODULE_NAME + ':chapters', state.chapters);
+      await localforage.setItem(MODULE_NAME + ':index', state.index);
+    } catch (e) {
+      renderStatus('持久化失败：' + (e && e.message ? e.message : e));
+    }
   }
 
   // —— 章节切分 ——
@@ -95,11 +107,11 @@
   // —— 文件导入 ——
   function importFile(file) {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const text = String(reader.result || '');
       state.chapters = splitChapters(text);
       state.index = 0;
-      saveChapters();
+      await saveChapters();
       renderStatus('已导入 ' + state.chapters.length + ' 章');
       renderChapterPreview();
     };
@@ -163,7 +175,7 @@
     if (ok) {
       idx += 1;
       state.index = idx;
-      saveChapters();
+      await saveChapters();
       await writeIndexToVariable(idx);
       renderStatus('已注入第 ' + idx + ' / ' + state.chapters.length + ' 章');
       renderChapterPreview();
@@ -200,7 +212,7 @@
     target.insertAdjacentHTML('beforeend', html);
 
     bindEvents();
-    loadChapters();
+    await loadChapters();
     if (state.chapters.length) {
       renderStatus('已恢复 ' + state.chapters.length + ' 章（当前第 ' + (state.index + 1) + ' 章）');
     } else {
@@ -272,6 +284,7 @@
       extensionSettings = context.extensionSettings;
       saveSettingsDebounced = context.saveSettingsDebounced;
       saveMetadata = context.saveMetadata;
+      localforage = context.libs && context.libs.localforage;
     } catch (e) {
       /* 保持为 null，面板降级到 body */
     }

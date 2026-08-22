@@ -27,7 +27,9 @@
 
 ## 持久化机制（重启不丢）
 
-章节数组与进度存进扩展设置（`extensionSettings`），随酒馆的 `settings.json` 落到服务器，重启后自动恢复，无需重新导入。
+章节数组与进度存进 `localforage`（SillyTavern.libs 提供的 IndexedDB 封装），独立于 `settings.json`，重启后自动恢复，无需重新导入，也不拖累全局设置。
+
+官方文档明确禁止往 `extensionSettings` 塞大块数据，推荐用 `localforage`。
 
 当前章内容与进度另写入聊天局部变量（`chatMetadata.variables`），供预设里 `{{getvar::}}` 读取。
 
