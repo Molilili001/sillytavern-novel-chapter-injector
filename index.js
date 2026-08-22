@@ -26,6 +26,10 @@
 
   // —— 默认设置 ——
   const DEFAULT_SETTINGS = Object.freeze({
+    // 分割模式：'chapter' 按章节切，'char' 按字数切
+    splitMode: 'chapter',
+    // 字数分割模式下每段多少字
+    splitSize: 1000,
     // 章节分隔符：'第' 表示按行首「第X章/回/卷/部」切
     chapterSeparator: '第',
     // 目标变量名（章节内容写入这里，供 {{getvar::变量名}} 读取）
@@ -99,8 +103,17 @@
     }
   }
 
-  // —— 章节切分 ——
+  // —— 文本切分（章节模式 / 字数模式二选一）——
   function splitChapters(text) {
+    const mode = getSettings().splitMode || 'chapter';
+    if (mode === 'char') {
+      return splitBySize(text);
+    }
+    return splitByChapter(text);
+  }
+
+  // 章节模式：按行首「第X章/回/卷/部」切
+  function splitByChapter(text) {
     const sep = (getSettings().chapterSeparator || '第').trim();
     if (sep === '第') {
       // 按行首「第X章/回/卷/部」切，lookahead 不吞标题
@@ -108,6 +121,41 @@
       return text.split(re).map((s) => s.trim()).filter(Boolean);
     }
     return text.split(sep).map((s) => s.trim()).filter(Boolean);
+  }
+
+  // 字数模式：按目标字数切，尽量在句末/换行处断开，避免拦腰斩句
+  function splitBySize(text) {
+    let size = Number(getSettings().splitSize);
+    if (!Number.isFinite(size) || size < 1) size = 1000;
+    size = Math.floor(size);
+
+    const clean = text.replace(/\r\n/g, '\n').trim();
+    if (!clean) return [];
+    if (clean.length <= size) return [clean];
+
+    const chunks = [];
+    let start = 0;
+    const total = clean.length;
+    while (start < total) {
+      let end = Math.min(start + size, total);
+      if (end < total) {
+        // 在 [start + size*0.5, end] 内找最近的断点（换行优先，其次句末标点）
+        const windowStart = Math.floor(start + size * 0.5);
+        const slice = clean.slice(windowStart, end);
+        let best = -1;
+        const nl = slice.lastIndexOf('\n');
+        if (nl >= 0) best = windowStart + nl + 1;
+        const punctRe = /[。！？!?；;]/g;
+        let m;
+        while ((m = punctRe.exec(slice)) !== null) {
+          best = windowStart + m.index + 1;
+        }
+        if (best > start && best < end) end = best;
+      }
+      chunks.push(clean.slice(start, end).trim());
+      start = end;
+    }
+    return chunks.filter(Boolean);
   }
 
   // —— 文件导入 ——
@@ -230,6 +278,8 @@
       'settings',
       {
         variableName: settings.variableName,
+        splitMode: settings.splitMode,
+        splitSize: settings.splitSize,
         chapterSeparator: settings.chapterSeparator,
         indexVariableName: settings.indexVariableName,
         batchSize: settings.batchSize,
@@ -252,6 +302,8 @@
     const fileInput = document.getElementById('nci-file');
     const importBtn = document.getElementById('nci-import-btn');
     const varInput = document.getElementById('nci-var');
+    const splitModeSel = document.getElementById('nci-splitmode');
+    const splitSizeInput = document.getElementById('nci-splitsize');
     const sepInput = document.getElementById('nci-sep');
     const idxInput = document.getElementById('nci-idxvar');
     const batchInput = document.getElementById('nci-batch');
@@ -271,6 +323,22 @@
     if (varInput) {
       varInput.addEventListener('change', () => {
         getSettings().variableName = varInput.value.trim() || 'current_chapter';
+        persistSettings();
+      });
+    }
+    if (splitModeSel) {
+      splitModeSel.value = getSettings().splitMode || 'chapter';
+      splitModeSel.addEventListener('change', () => {
+        getSettings().splitMode = splitModeSel.value === 'char' ? 'char' : 'chapter';
+        persistSettings();
+      });
+    }
+    if (splitSizeInput) {
+      splitSizeInput.value = String(getSettings().splitSize || 1000);
+      splitSizeInput.addEventListener('change', () => {
+        let n = Number(splitSizeInput.value);
+        if (!Number.isFinite(n) || n < 1) n = 1000;
+        getSettings().splitSize = Math.floor(n);
         persistSettings();
       });
     }
