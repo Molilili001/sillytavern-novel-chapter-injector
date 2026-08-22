@@ -3,13 +3,14 @@
  * Novel Chapter Injector
  *
  * 功能：导入一个 txt 小说，按第X章切分；每轮请求后（或手动触发），
- *       把当前章节内容写入一个指定变量，供预设 / 世界书 / 宏读取。
+ *       把当前章节内容写入「聊天局部变量」，供预设里用 {{getvar::变量名}} 读取。
  *
- * 本扩展走酒馆标准「扩展设置面板」：用 renderExtensionTemplateAsync 渲染
- * settings.html 挂到扩展面板，设置持久化用 extensionSettings + saveSettingsDebounced。
+ * 变量写入走 SillyTavern 核心的 STScript 聊天局部变量：
+ *   getContext().chatMetadata.variables[name] = value，然后 saveMetadata()。
+ *   {{getvar::name}} 读的就是这个存储（官方权威依据：SillyTavern/Extension-Variables 示例插件）。
  *
  * 依赖边界（重要）：
- *   - 变量读写 API 由 Tavern Helper（JS-Slash-Runner）提供，本扩展探测式访问。
+ *   - 聊天局部变量是酒馆核心自带的，不依赖 Tavern Helper。
  *   - 所有标了 [RUNTIME-CHECK] 的符号，均需在目标酒馆版本里确认确切拼写。
  */
 (function () {
@@ -24,9 +25,7 @@
   const DEFAULT_SETTINGS = Object.freeze({
     // 章节分隔符：'第' 表示按行首「第X章/回/卷/部」切
     chapterSeparator: '第',
-    // 目标变量作用域：chat / character / global / extension
-    variableScope: 'chat',
-    // 目标变量名（章节内容写入这里）
+    // 目标变量名（章节内容写入这里，供 {{getvar::变量名}} 读取）
     variableName: 'current_chapter',
     // 进度索引变量名（记录读到第几章）
     indexVariableName: 'current_chapter_index',
@@ -38,6 +37,7 @@
   let renderExtensionTemplateAsync = null;
   let extensionSettings = null;
   let saveSettingsDebounced = null;
+  let saveMetadata = null;
 
   // —— 运行时状态（章节数组可能很大，单独存 localStorage）——
   const state = {
@@ -50,7 +50,6 @@
     if (!extensionSettings[MODULE_NAME]) {
       extensionSettings[MODULE_NAME] = structuredClone(DEFAULT_SETTINGS);
     }
-    // 补全新版本新增的默认键
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (!Object.hasOwn(extensionSettings[MODULE_NAME], key)) {
         extensionSettings[MODULE_NAME][key] = DEFAULT_SETTINGS[key];
@@ -63,7 +62,7 @@
     if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
   }
 
-  // —— 状态读写（localStorage 兜底）——
+  // —— 状态读写（localStorage 兜底，只存章节数组和索引）——
   function loadState() {
     try {
       const raw = localStorage.getItem(STATE_KEY);
@@ -112,29 +111,28 @@
     reader.readAsText(file, 'utf-8');
   }
 
-  // —— 变量读写（探测式，依赖 Tavern Helper）——
-  function hasHelper() {
-    return !!(window.TavernHelper && typeof window.TavernHelper.getVariables === 'function');
+  // —— 变量读写（写 STScript 聊天局部变量：chatMetadata.variables）——
+  // 官方权威依据：SillyTavern/Extension-Variables 示例插件。
+  // {{getvar::name}} 读的就是 getContext().chatMetadata.variables[name]。
+  // 注意：chatMetadata 引用会在切换聊天时失效，所以每次都要重新取。
+  function getChatVariables() {
+    const context = window.SillyTavern && window.SillyTavern.getContext
+      ? window.SillyTavern.getContext()
+      : null;
+    if (!context || !context.chatMetadata) return null;
+    if (!context.chatMetadata.variables) context.chatMetadata.variables = {};
+    return context.chatMetadata.variables;
   }
 
   async function writeChapterToVariable(content) {
-    if (!hasHelper()) {
-      try {
-        await navigator.clipboard.writeText(content);
-        renderStatus('未检测到 Tavern Helper，章节已复制到剪贴板');
-      } catch (e) {
-        renderStatus('未检测到 Tavern Helper，且剪贴板不可用');
-      }
-      return false;
-    }
-    // [RUNTIME-CHECK] 写入 API 与作用域参数按运行时调整。
     try {
-      const helper = window.TavernHelper;
-      const scope = getSettings().variableScope;
-      await helper.insertOrAssignVariables(
-        { [getSettings().variableName]: content },
-        scope
-      );
+      const vars = getChatVariables();
+      if (!vars) {
+        renderStatus('拿不到聊天元数据，写入失败');
+        return false;
+      }
+      vars[getSettings().variableName] = content;
+      if (typeof saveMetadata === 'function') await saveMetadata();
       return true;
     } catch (e) {
       renderStatus('写入变量失败：' + (e && e.message ? e.message : e));
@@ -143,24 +141,18 @@
   }
 
   async function readIndexFromVariable() {
-    if (!hasHelper()) return state.index;
-    try {
-      const vars = await window.TavernHelper.getVariables(getSettings().variableScope);
-      const raw = vars && vars[getSettings().indexVariableName];
-      const n = Number(raw);
-      return Number.isFinite(n) ? n : state.index;
-    } catch (e) {
-      return state.index;
-    }
+    const vars = getChatVariables();
+    if (!vars) return state.index;
+    const n = Number(vars[getSettings().indexVariableName]);
+    return Number.isFinite(n) ? n : state.index;
   }
 
   async function writeIndexToVariable(idx) {
-    if (!hasHelper()) return;
     try {
-      await window.TavernHelper.insertOrAssignVariables(
-        { [getSettings().indexVariableName]: String(idx) },
-        getSettings().variableScope
-      );
+      const vars = getChatVariables();
+      if (!vars) return;
+      vars[getSettings().indexVariableName] = String(idx);
+      if (typeof saveMetadata === 'function') await saveMetadata();
     } catch (e) {
       /* 静默 */
     }
@@ -215,7 +207,6 @@
         indexVariableName: settings.indexVariableName,
       }
     );
-    // 左列：系统功能；右列（#extensions_settings2）：视觉/UI 相关。本扩展属系统功能，挂左列。
     const target = document.getElementById('extensions_settings') || document.body;
     target.insertAdjacentHTML('beforeend', html);
 
@@ -228,7 +219,6 @@
   function bindEvents() {
     const fileInput = document.getElementById('nci-file');
     const importBtn = document.getElementById('nci-import-btn');
-    const scopeSel = document.getElementById('nci-scope');
     const varInput = document.getElementById('nci-var');
     const sepInput = document.getElementById('nci-sep');
     const idxInput = document.getElementById('nci-idxvar');
@@ -242,15 +232,7 @@
       fileInput.addEventListener('change', (e) => {
         const f = e.target.files && e.target.files[0];
         if (f) importFile(f);
-        // 允许重复选同一个文件也能再次触发
         e.target.value = '';
-      });
-    }
-    if (scopeSel) {
-      scopeSel.value = getSettings().variableScope;
-      scopeSel.addEventListener('change', () => {
-        getSettings().variableScope = scopeSel.value;
-        persistSettings();
       });
     }
     if (varInput) {
@@ -296,11 +278,11 @@
       renderExtensionTemplateAsync = context.renderExtensionTemplateAsync;
       extensionSettings = context.extensionSettings;
       saveSettingsDebounced = context.saveSettingsDebounced;
+      saveMetadata = context.saveMetadata;
     } catch (e) {
       /* 保持为 null，面板降级到 body */
     }
 
-    // 确保 settings 容器存在后再渲染
     const tryRender = () => {
       if (document.getElementById('extensions_settings')) {
         renderPanel();
@@ -317,7 +299,6 @@
     advanceChapter: advanceChapter,
   };
 
-  // 若已在扩展环境，立即初始化
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     init();
   } else {

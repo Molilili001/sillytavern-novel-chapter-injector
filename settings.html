@@ -5,7 +5,7 @@
   </div>
   <div class="inline-drawer-content">
   <div class="nci-intro">
-    把一篇 txt 小说按「第X章」自动切分，每轮请求后把当前章写入一个变量，供预设 / 世界书读取。
+    把一篇 txt 小说按「第X章」自动切分，每轮请求后把当前章写入一个<b>聊天局部变量</b>，供预设里用 <code>{{getvar::变量名}}</code> 读取。
   </div>
 
   <div class="nci-step">
@@ -16,19 +16,8 @@
   </div>
 
   <div class="nci-step">
-    <div class="nci-step-title">② 变量作用域</div>
-    <div class="nci-desc">章节内容写到哪个作用域的变量里。想「换卡不丢进度」选 global；「跟当前这张卡绑定」选 character；「只跟当前聊天走」选 chat。</div>
-    <select id="nci-scope">
-      <option value="chat">chat（跟当前聊天走）</option>
-      <option value="character">character（跟角色卡走）</option>
-      <option value="global">global（全局）</option>
-      <option value="extension">extension</option>
-    </select>
-  </div>
-
-  <div class="nci-step">
-    <div class="nci-step-title">③ 变量名（预设里读取用）</div>
-    <div class="nci-desc">当前章内容会写入这个变量。之后在预设 / 世界书里用 <code>{{getvar::变量名}}</code> 读取（宏语法以你的 Tavern Helper 版本为准）。</div>
+    <div class="nci-step-title">② 变量名（预设里读取用）</div>
+    <div class="nci-desc">当前章内容会写入这个<b>聊天局部变量</b>（每张聊天独立）。之后在预设里写 <code>{{getvar::变量名}}</code> 就能读到当前章正文。</div>
     <input type="text" id="nci-var" class="text_pole" value="{{variableName}}">
   </div>
 
@@ -47,8 +36,8 @@
   </div>
 
   <div class="nci-step">
-    <div class="nci-step-title">④ 推进剧情</div>
-    <div class="nci-desc">导入后点下面的按钮，把第一章写入变量；每轮请求后会自动推进（需 Tavern Helper）。</div>
+    <div class="nci-step-title">③ 推进剧情</div>
+    <div class="nci-desc">导入后点下面的按钮，把第一章写入变量；每轮请求后会自动推进（自动事件绑定需运行时确认）。</div>
     <button id="nci-next" class="menu_button">▶ 手动注入下一章</button>
   </div>
 
