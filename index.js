@@ -44,6 +44,9 @@
   let saveSettingsDebounced = null;
   let saveMetadata = null;
   let localforage = null;
+  let eventSource = null;
+  let eventTypes = null;
+  let autoAdvanceHandler = null;
 
   // —— 运行时状态 ——
   const state = {
@@ -285,13 +288,33 @@
   }
 
   // —— 自动推进事件监听 ——
+  // 官方 API：getContext().eventSource.on(event_types.XXX, handler)
+  // 在「生成完成」后推进下一章，这样下一轮请求读到的就是新章节。
   function registerAutoAdvance() {
-    // [RUNTIME-CHECK] 事件名与 eventSource 用法按 ST 版本确认。
-    // 自动推进逻辑封装在 advanceChapter，事件绑定成功后每轮触发。
-    if (!ctx || !ctx.eventSource) {
+    if (!eventSource || !eventTypes) {
+      renderStatus('事件源不可用，自动注入失效，请用手动按钮');
       return;
     }
-    // 占位：真实事件绑定需以运行时导出的事件常量为准。
+    if (autoAdvanceHandler) return; // 防止重复绑定
+    autoAdvanceHandler = () => {
+      if (getSettings().autoAdvance) advanceChapter();
+    };
+    // [RUNTIME-CHECK] event_types 里的确切常量名按 ST 版本确认，常见为 GENERATION_ENDED。
+    // 找不到 GENERATION_ENDED 时退回 MESSAGE_RECEIVED。
+    const evt = eventTypes.GENERATION_ENDED || eventTypes.MESSAGE_RECEIVED;
+    if (!evt) {
+      renderStatus('事件常量缺失，自动注入失效');
+      return;
+    }
+    eventSource.on(evt, autoAdvanceHandler);
+  }
+
+  function unregisterAutoAdvance() {
+    if (eventSource && autoAdvanceHandler) {
+      const evt = eventTypes && (eventTypes.GENERATION_ENDED || eventTypes.MESSAGE_RECEIVED);
+      if (evt) eventSource.off(evt, autoAdvanceHandler);
+    }
+    autoAdvanceHandler = null;
   }
 
   // —— 生命周期 ——
@@ -306,6 +329,8 @@
       saveSettingsDebounced = context.saveSettingsDebounced;
       saveMetadata = context.saveMetadata;
       localforage = context.libs && context.libs.localforage;
+      eventSource = context.eventSource;
+      eventTypes = context.event_types;
     } catch (e) {
       /* 保持为 null，面板降级到 body */
     }
