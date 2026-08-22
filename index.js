@@ -27,7 +27,7 @@
   // —— 默认设置 ——
   const DEFAULT_SETTINGS = Object.freeze({
     // 分割模式：'chapter' 按章节切，'char' 按字数切
-    splitMode: 'chapter',
+    splitMode: 'char',
     // 字数分割模式下每段多少字
     splitSize: 6000,
     // 章节分隔符：'第' 表示按行首「第X章/回/卷/部」切
@@ -105,7 +105,7 @@
 
   // —— 文本切分（章节模式 / 字数模式二选一）——
   function splitChapters(text) {
-    const mode = getSettings().splitMode || 'chapter';
+    const mode = getSettings().splitMode || 'char';
     if (mode === 'char') {
       return splitBySize(text);
     }
@@ -332,7 +332,7 @@
       });
     }
     if (splitModeSel) {
-      splitModeSel.value = getSettings().splitMode || 'chapter';
+      splitModeSel.value = getSettings().splitMode || 'char';
       splitModeSel.addEventListener('change', () => {
         getSettings().splitMode = splitModeSel.value === 'char' ? 'char' : 'chapter';
         persistSettings();
