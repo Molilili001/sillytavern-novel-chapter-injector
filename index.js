@@ -32,6 +32,8 @@
     variableName: 'current_chapter',
     // 进度索引变量名（记录读到第几章）
     indexVariableName: 'current_chapter_index',
+    // 每次注入多少章（1=单章，3=一次拼 3 章）
+    batchSize: 1,
     // 是否在请求发出后自动推进
     autoAdvance: true,
   });
@@ -159,25 +161,33 @@
     }
   }
 
-  // —— 推进一章 ——
+  // —— 推进章节（支持批量：一次注入 N 章）——
   async function advanceChapter() {
     if (!state.chapters.length) {
       renderStatus('尚未导入小说');
       return;
     }
-    let idx = state.index;
-    if (idx >= state.chapters.length) {
+    const start = state.index;
+    if (start >= state.chapters.length) {
       renderStatus('已读完最后一章');
       return;
     }
-    const content = state.chapters[idx];
+    let size = Number(getSettings().batchSize);
+    if (!Number.isFinite(size) || size < 1) size = 1;
+    size = Math.floor(size);
+    const end = Math.min(start + size, state.chapters.length);
+
+    // 取 [start, end) 这几章，用空行拼接
+    const batch = state.chapters.slice(start, end);
+    const content = batch.join('\n\n');
+
     const ok = await writeChapterToVariable(content);
     if (ok) {
-      idx += 1;
-      state.index = idx;
+      const newIdx = end;
+      state.index = newIdx;
       await saveChapters();
-      await writeIndexToVariable(idx);
-      renderStatus('已注入第 ' + idx + ' / ' + state.chapters.length + ' 章');
+      await writeIndexToVariable(newIdx);
+      renderStatus('已注入第 ' + (start + 1) + ' ~ ' + newIdx + ' 章（共 ' + batch.length + ' 章）');
       renderChapterPreview();
     }
   }
@@ -206,6 +216,7 @@
         variableName: settings.variableName,
         chapterSeparator: settings.chapterSeparator,
         indexVariableName: settings.indexVariableName,
+        batchSize: settings.batchSize,
       }
     );
     const target = document.getElementById('extensions_settings') || document.body;
@@ -227,6 +238,7 @@
     const varInput = document.getElementById('nci-var');
     const sepInput = document.getElementById('nci-sep');
     const idxInput = document.getElementById('nci-idxvar');
+    const batchInput = document.getElementById('nci-batch');
     const nextBtn = document.getElementById('nci-next');
 
     // 点醒目的「导入」按钮，触发隐藏的 file input 打开文件选择框。
@@ -255,6 +267,15 @@
     if (idxInput) {
       idxInput.addEventListener('change', () => {
         getSettings().indexVariableName = idxInput.value.trim() || 'current_chapter_index';
+        persistSettings();
+      });
+    }
+    if (batchInput) {
+      batchInput.value = String(getSettings().batchSize);
+      batchInput.addEventListener('change', () => {
+        let n = Number(batchInput.value);
+        if (!Number.isFinite(n) || n < 1) n = 1;
+        getSettings().batchSize = Math.floor(n);
         persistSettings();
       });
     }

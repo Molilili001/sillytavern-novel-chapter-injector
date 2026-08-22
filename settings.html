@@ -33,6 +33,11 @@
       <input type="text" id="nci-idxvar" class="text_pole" value="{{indexVariableName}}">
     </div>
     <div class="nci-desc">记录「读到第几章」的变量名，别跟上面的章节变量名重名。</div>
+    <div class="nci-row">
+      <label>每次注入章数</label>
+      <input type="number" id="nci-batch" class="text_pole" value="{{batchSize}}" min="1" step="1">
+    </div>
+    <div class="nci-desc">一次注入几章，比如填 3 就把 3 章拼在一起写入变量、进度一次跳 3 章。</div>
   </div>
 
   <div class="nci-step">
