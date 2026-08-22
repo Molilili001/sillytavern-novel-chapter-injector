@@ -227,16 +227,23 @@
 
   function bindEvents() {
     const fileInput = document.getElementById('nci-file');
+    const importBtn = document.getElementById('nci-import-btn');
     const scopeSel = document.getElementById('nci-scope');
     const varInput = document.getElementById('nci-var');
     const sepInput = document.getElementById('nci-sep');
     const idxInput = document.getElementById('nci-idxvar');
     const nextBtn = document.getElementById('nci-next');
 
+    // 点醒目的「导入」按钮，触发隐藏的 file input 打开文件选择框。
+    if (importBtn && fileInput) {
+      importBtn.addEventListener('click', () => fileInput.click());
+    }
     if (fileInput) {
       fileInput.addEventListener('change', (e) => {
         const f = e.target.files && e.target.files[0];
         if (f) importFile(f);
+        // 允许重复选同一个文件也能再次触发
+        e.target.value = '';
       });
     }
     if (scopeSel) {

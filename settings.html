@@ -1,38 +1,52 @@
-<div class="inline-drawer" id="nci-drawer">
-  <div class="inline-drawer-toggle inline-drawer-header">
-    <b>小说章节自动注入器</b>
-    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+<div id="nci-drawer">
+  <div class="nci-intro">
+    把一篇 txt 小说按「第X章」自动切分，每轮请求后把当前章写入一个变量，供预设 / 世界书读取。
   </div>
-  <div class="inline-drawer-content">
-    <div class="nci-row">
-      <label>小说文件（.txt）</label>
-      <input type="file" id="nci-file" accept=".txt,.md,text/plain">
-    </div>
-    <div class="nci-row">
-      <label>作用域</label>
-      <select id="nci-scope">
-        <option value="chat">chat（跟聊天走）</option>
-        <option value="character">character（跟卡走）</option>
-        <option value="global">global（全局）</option>
-        <option value="extension">extension</option>
-      </select>
-    </div>
-    <div class="nci-row">
-      <label>变量名</label>
-      <input type="text" id="nci-var" class="text_pole" value="{{variableName}}">
-    </div>
+
+  <div class="nci-step">
+    <div class="nci-step-title">① 导入小说文件</div>
+    <div class="nci-desc">选一个 .txt 文件，脚本会按行首「第X章 / 第X回 / 第X卷」自动切成章节。</div>
+    <button id="nci-import-btn" class="menu_button">📄 选择小说文件并导入</button>
+    <input type="file" id="nci-file" class="nci-file-hidden" accept=".txt,.md,text/plain">
+  </div>
+
+  <div class="nci-step">
+    <div class="nci-step-title">② 变量作用域</div>
+    <div class="nci-desc">章节内容写到哪个作用域的变量里。想「换卡不丢进度」选 global；「跟当前这张卡绑定」选 character；「只跟当前聊天走」选 chat。</div>
+    <select id="nci-scope">
+      <option value="chat">chat（跟当前聊天走）</option>
+      <option value="character">character（跟角色卡走）</option>
+      <option value="global">global（全局）</option>
+      <option value="extension">extension</option>
+    </select>
+  </div>
+
+  <div class="nci-step">
+    <div class="nci-step-title">③ 变量名（预设里读取用）</div>
+    <div class="nci-desc">当前章内容会写入这个变量。之后在预设 / 世界书里用 <code>{{getvar::变量名}}</code> 读取（宏语法以你的 Tavern Helper 版本为准）。</div>
+    <input type="text" id="nci-var" class="text_pole" value="{{variableName}}">
+  </div>
+
+  <div class="nci-step">
+    <div class="nci-step-title">⚙ 高级设置（一般不用动）</div>
     <div class="nci-row">
       <label>分隔符</label>
       <input type="text" id="nci-sep" class="text_pole" value="{{chapterSeparator}}" placeholder="第（按第X章切）">
     </div>
+    <div class="nci-desc">填「第」= 按行首第X章切；填其它字符 = 按那个字符切。</div>
     <div class="nci-row">
       <label>进度变量名</label>
       <input type="text" id="nci-idxvar" class="text_pole" value="{{indexVariableName}}">
     </div>
-    <div class="nci-row">
-      <button id="nci-next" class="menu_button">手动注入下一章</button>
-    </div>
-    <div class="nci-status" id="nci-status">未导入</div>
-    <div class="nci-preview" id="nci-preview"></div>
+    <div class="nci-desc">记录「读到第几章」的变量名，别跟上面的章节变量名重名。</div>
   </div>
+
+  <div class="nci-step">
+    <div class="nci-step-title">④ 推进剧情</div>
+    <div class="nci-desc">导入后点下面的按钮，把第一章写入变量；每轮请求后会自动推进（需 Tavern Helper）。</div>
+    <button id="nci-next" class="menu_button">▶ 手动注入下一章</button>
+  </div>
+
+  <div class="nci-status" id="nci-status">未导入</div>
+  <div class="nci-preview" id="nci-preview"></div>
 </div>
