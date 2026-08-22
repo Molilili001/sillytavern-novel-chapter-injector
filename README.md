@@ -1,6 +1,6 @@
 # 小说章节自动注入器
 
-把一篇小说 txt 导入酒馆，按章节切分，每轮请求后（或手动触发）自动把当前章节写入指定变量，供预设 / 世界书 / 宏读取。
+把一篇小说 txt 导入酒馆，按第X章切分，每轮请求后（或手动触发）自动把当前章节写入指定变量，供预设 / 世界书 / 宏读取。
 
 ## 依赖
 
@@ -9,9 +9,9 @@
 
 ## 安装
 
-1. 把整个 `novel-chapter-injector` 目录放进 SillyTavern 的扩展目录（`public/scripts/extensions/third-party/`）。
-2. 扩展面板里找到「小说章节自动注入器」，启用。
-3. 在面板里：选作用域、填变量名、设分隔符、导入 txt。
+1. 扩展面板 → Install extension → 粘贴本仓库 URL。
+2. 启用「小说章节自动注入器」。
+3. 打开扩展面板，在扩展列表展开本扩展，即可看到设置面板（文件选择、作用域、变量名、分隔符、手动注入按钮）。
 
 ## 使用
 
@@ -22,13 +22,17 @@
   - Tavern Helper 宏：`{{getvar::current_chapter}}`
   - 按你的运行时宏语法为准。
 
+## 面板说明
+
+本扩展走酒馆标准「扩展设置面板」，用 `renderExtensionTemplateAsync` 渲染 `settings.html`，设置持久化用 `extensionSettings` + `saveSettingsDebounced`。章节内容（可能很大）单独存 `localStorage`。
+
 ## 运行时验证清单（勿跳过）
 
 本骨架所有 `[RUNTIME-CHECK]` 处均未硬编码未验证的符号，落地前需在你的酒馆版本里确认：
 
 1. 变量 API 的确切调用方式与作用域参数（`window.TavernHelper` 下到底叫什么、作用域参数是字符串还是常量）。
-2. 事件名（请求发出 / 消息发送）对应的导出常量，以及 `eventSource` 的订阅方法名（`on` / `off` 还是别的）。
-3. 扩展 `settings` 读写 API 若要替换 `localStorage` 兜底，确认其签名。
+2. 事件名（请求发出 / 消息发送）对应的导出常量，以及 `eventSource` 的订阅方法名。
+3. `renderExtensionTemplateAsync` 的第一个路径参数是否与你的安装目录一致（第三方扩展通常为 `third-party/<repo-name>`）。
 
 ## 目录
 
@@ -36,6 +40,7 @@
 novel-chapter-injector/
 ├── manifest.json
 ├── index.js
+├── settings.html
 ├── style.css
 └── README.md
 ```

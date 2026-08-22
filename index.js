@@ -2,26 +2,25 @@
  * 小说章节自动注入器
  * Novel Chapter Injector
  *
- * 功能：导入一个 txt 小说，按章节切分；每轮请求发出后（或手动触发），
+ * 功能：导入一个 txt 小说，按第X章切分；每轮请求后（或手动触发），
  *       把当前章节内容写入一个指定变量，供预设 / 世界书 / 宏读取。
  *
- * 依赖边界（重要）：
- *   - 变量读写 API 由 Tavern Helper（JS-Slash-Runner）提供。
- *   - 本扩展通过 window.TavernHelper 探测式访问，检测不到时降级为手动复制模式。
+ * 本扩展走酒馆标准「扩展设置面板」：用 renderExtensionTemplateAsync 渲染
+ * settings.html 挂到扩展面板，设置持久化用 extensionSettings + saveSettingsDebounced。
  *
- * 所有标了 [RUNTIME-CHECK] 的符号，均需在你的酒馆版本里确认确切拼写与签名，
- * 本骨架不做凭记忆的硬编码，避免在未验证的运行时上翻车。
+ * 依赖边界（重要）：
+ *   - 变量读写 API 由 Tavern Helper（JS-Slash-Runner）提供，本扩展探测式访问。
+ *   - 所有标了 [RUNTIME-CHECK] 的符号，均需在目标酒馆版本里确认确切拼写。
  */
 (function () {
   'use strict';
 
-  const EXT_ID = 'novel-chapter-injector';
-  const SETTINGS_KEY = EXT_ID + ':settings';
-  const STATE_KEY = EXT_ID + ':state';
+  const MODULE_NAME = 'novel-chapter-injector';
+  const STATE_KEY = MODULE_NAME + ':state';
 
-  // —— 默认配置 ——
-  const DEFAULTS = {
-    // 章节分隔符：默认按行首「第X章」切。填 '第' 即启用标题切分。
+  // —— 默认设置 ——
+  const DEFAULT_SETTINGS = Object.freeze({
+    // 章节分隔符：'第' 表示按行首「第X章/回/卷/部」切
     chapterSeparator: '第',
     // 目标变量作用域：chat / character / global / extension
     variableScope: 'chat',
@@ -31,37 +30,38 @@
     indexVariableName: 'current_chapter_index',
     // 是否在请求发出后自动推进
     autoAdvance: true,
-  };
+  });
 
-  // —— 运行时状态 ——
+  let ctx = null;
+  let renderExtensionTemplateAsync = null;
+  let extensionSettings = null;
+  let saveSettingsDebounced = null;
+
+  // —— 运行时状态（章节数组可能很大，单独存 localStorage）——
   const state = {
     chapters: [],
     index: 0,
   };
 
-  // —— 设置与状态持久化（用扩展自己的 settings 存储）——
-  let settings = { ...DEFAULTS };
-  let listeners = [];
-
-  function loadSettings() {
-    // [RUNTIME-CHECK] 扩展设置读取 API 的准确调用方式需按你的 ST 版本确认。
-    // 此处用最保守的 localStorage 兜底，避免依赖未验证的 settings 接口。
-    try {
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      if (raw) settings = { ...DEFAULTS, ...JSON.parse(raw) };
-    } catch (e) {
-      settings = { ...DEFAULTS };
+  // —— 设置读写（走酒馆 extensionSettings）——
+  function getSettings() {
+    if (!extensionSettings[MODULE_NAME]) {
+      extensionSettings[MODULE_NAME] = structuredClone(DEFAULT_SETTINGS);
     }
+    // 补全新版本新增的默认键
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (!Object.hasOwn(extensionSettings[MODULE_NAME], key)) {
+        extensionSettings[MODULE_NAME][key] = DEFAULT_SETTINGS[key];
+      }
+    }
+    return extensionSettings[MODULE_NAME];
   }
 
-  function saveSettings() {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    } catch (e) {
-      /* 静默，localStorage 不可用时降级到内存 */
-    }
+  function persistSettings() {
+    if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
   }
 
+  // —— 状态读写（localStorage 兜底）——
   function loadState() {
     try {
       const raw = localStorage.getItem(STATE_KEY);
@@ -80,26 +80,19 @@
     try {
       localStorage.setItem(STATE_KEY, JSON.stringify(state));
     } catch (e) {
-      /* 静默 */
+      /* localStorage 满或不可用时静默降级到内存 */
     }
   }
 
   // —— 章节切分 ——
   function splitChapters(text) {
-    const sep = (settings.chapterSeparator || '第').trim();
-    // 「第」：按行首「第X章/回/卷/部」切，保留标题（lookahead 不吞字）。
+    const sep = (getSettings().chapterSeparator || '第').trim();
     if (sep === '第') {
+      // 按行首「第X章/回/卷/部」切，lookahead 不吞标题
       const re = /\n(?=第[一二三四五六七八九十百千万0-9０-９]+[章节回卷部])/g;
-      return text
-        .split(re)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      return text.split(re).map((s) => s.trim()).filter(Boolean);
     }
-    // 其它单/双汉字分隔符：按普通字符串切。
-    return text
-      .split(sep)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    return text.split(sep).map((s) => s.trim()).filter(Boolean);
   }
 
   // —— 文件导入 ——
@@ -117,16 +110,13 @@
     reader.readAsText(file, 'utf-8');
   }
 
-  // —— 变量读写（探测式）——
-  // [RUNTIME-CHECK] getVariables / insertOrAssignVariables 属于 Tavern Helper。
-  // 签名与作用域参数需在你的版本确认；此处做能力探测并提供降级。
+  // —— 变量读写（探测式，依赖 Tavern Helper）——
   function hasHelper() {
     return !!(window.TavernHelper && typeof window.TavernHelper.getVariables === 'function');
   }
 
   async function writeChapterToVariable(content) {
     if (!hasHelper()) {
-      // 降级：把当前章节复制到剪贴板，供手动粘贴。
       try {
         await navigator.clipboard.writeText(content);
         renderStatus('未检测到 Tavern Helper，章节已复制到剪贴板');
@@ -135,13 +125,12 @@
       }
       return false;
     }
-    // [RUNTIME-CHECK] 确切的写入 API 与作用域参数按运行时调整。
-    // 这里以核心事实索引中列出的符号名为基准，参数形状需实测。
+    // [RUNTIME-CHECK] 写入 API 与作用域参数按运行时调整。
     try {
       const helper = window.TavernHelper;
-      const scope = settings.variableScope;
+      const scope = getSettings().variableScope;
       await helper.insertOrAssignVariables(
-        { [settings.variableName]: content },
+        { [getSettings().variableName]: content },
         scope
       );
       return true;
@@ -154,9 +143,8 @@
   async function readIndexFromVariable() {
     if (!hasHelper()) return state.index;
     try {
-      const helper = window.TavernHelper;
-      const vars = await helper.getVariables(settings.variableScope);
-      const raw = vars && vars[settings.indexVariableName];
+      const vars = await window.TavernHelper.getVariables(getSettings().variableScope);
+      const raw = vars && vars[getSettings().indexVariableName];
       const n = Number(raw);
       return Number.isFinite(n) ? n : state.index;
     } catch (e) {
@@ -167,10 +155,9 @@
   async function writeIndexToVariable(idx) {
     if (!hasHelper()) return;
     try {
-      const helper = window.TavernHelper;
-      await helper.insertOrAssignVariables(
-        { [settings.indexVariableName]: String(idx) },
-        settings.variableScope
+      await window.TavernHelper.insertOrAssignVariables(
+        { [getSettings().indexVariableName]: String(idx) },
+        getSettings().variableScope
       );
     } catch (e) {
       /* 静默 */
@@ -200,116 +187,131 @@
     }
   }
 
-  // —— 简易 UI ——
-  let panel = null;
-
-  function buildPanel() {
-    panel = document.createElement('div');
-    panel.id = EXT_ID + '-panel';
-    panel.innerHTML = [
-      '<div class="nci-header">小说章节自动注入器</div>',
-      '<div class="nci-row"><input type="file" id="nci-file" accept=".txt,.md,text/plain"></div>',
-      '<div class="nci-row"><label>作用域</label><select id="nci-scope">',
-      '<option value="chat">chat（跟聊天走）</option>',
-      '<option value="character">character（跟卡走）</option>',
-      '<option value="global">global（全局）</option>',
-      '<option value="extension">extension</option>',
-      '</select></div>',
-      '<div class="nci-row"><label>变量名</label><input type="text" id="nci-var" value="current_chapter"></div>',
-      '<div class="nci-row"><label>分隔符</label><input type="text" id="nci-sep" value="第" placeholder="第（按第X章切）"></div>',
-      '<div class="nci-row"><button id="nci-next">手动注入下一章</button></div>',
-      '<div class="nci-status" id="nci-status">未导入</div>',
-      '<div class="nci-preview" id="nci-preview"></div>',
-    ].join('');
-    document.body.appendChild(panel);
-
-    const fileInput = panel.querySelector('#nci-file');
-    const scopeSel = panel.querySelector('#nci-scope');
-    const varInput = panel.querySelector('#nci-var');
-    const sepInput = panel.querySelector('#nci-sep');
-    const nextBtn = panel.querySelector('#nci-next');
-
-    fileInput.addEventListener('change', (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (f) importFile(f);
-    });
-
-    scopeSel.value = settings.variableScope;
-    varInput.value = settings.variableName;
-    sepInput.value = settings.chapterSeparator || '第';
-
-    scopeSel.addEventListener('change', () => {
-      settings.variableScope = scopeSel.value;
-      saveSettings();
-    });
-    varInput.addEventListener('change', () => {
-      settings.variableName = varInput.value.trim() || 'current_chapter';
-      saveSettings();
-    });
-    sepInput.addEventListener('change', () => {
-      settings.chapterSeparator = sepInput.value || '第';
-      saveSettings();
-    });
-    nextBtn.addEventListener('click', () => advanceChapter());
-  }
-
+  // —— 面板渲染 ——
   function renderStatus(msg) {
-    const el = panel && panel.querySelector('#nci-status');
+    const el = document.getElementById('nci-status');
     if (el) el.textContent = msg;
   }
 
   function renderChapterPreview() {
-    const el = panel && panel.querySelector('#nci-preview');
+    const el = document.getElementById('nci-preview');
     if (!el) return;
     const cur = state.chapters[state.index] || '';
     el.textContent = cur.length > 200 ? cur.slice(0, 200) + '…' : cur;
   }
 
-  // —— 事件监听：请求发出后自动推进 ——
+  async function renderPanel() {
+    if (!renderExtensionTemplateAsync) return;
+    const settings = getSettings();
+    // [RUNTIME-CHECK] renderExtensionTemplateAsync 的路径与模板名按实际安装目录确认。
+    const html = await renderExtensionTemplateAsync(
+      'third-party/' + MODULE_NAME,
+      'settings',
+      {
+        variableName: settings.variableName,
+        chapterSeparator: settings.chapterSeparator,
+        indexVariableName: settings.indexVariableName,
+      }
+    );
+    // 左列：系统功能；右列（#extensions_settings2）：视觉/UI 相关。本扩展属系统功能，挂左列。
+    const target = document.getElementById('extensions_settings') || document.body;
+    target.insertAdjacentHTML('beforeend', html);
+
+    bindEvents();
+    loadState();
+    renderStatus('未导入');
+    renderChapterPreview();
+  }
+
+  function bindEvents() {
+    const fileInput = document.getElementById('nci-file');
+    const scopeSel = document.getElementById('nci-scope');
+    const varInput = document.getElementById('nci-var');
+    const sepInput = document.getElementById('nci-sep');
+    const idxInput = document.getElementById('nci-idxvar');
+    const nextBtn = document.getElementById('nci-next');
+
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) importFile(f);
+      });
+    }
+    if (scopeSel) {
+      scopeSel.value = getSettings().variableScope;
+      scopeSel.addEventListener('change', () => {
+        getSettings().variableScope = scopeSel.value;
+        persistSettings();
+      });
+    }
+    if (varInput) {
+      varInput.addEventListener('change', () => {
+        getSettings().variableName = varInput.value.trim() || 'current_chapter';
+        persistSettings();
+      });
+    }
+    if (sepInput) {
+      sepInput.addEventListener('change', () => {
+        getSettings().chapterSeparator = sepInput.value || '第';
+        persistSettings();
+      });
+    }
+    if (idxInput) {
+      idxInput.addEventListener('change', () => {
+        getSettings().indexVariableName = idxInput.value.trim() || 'current_chapter_index';
+        persistSettings();
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => advanceChapter());
+    }
+  }
+
+  // —— 自动推进事件监听 ——
   function registerAutoAdvance() {
-    // [RUNTIME-CHECK] 事件名与 eventSource 用法需按你的 ST 版本确认。
-    // 此处不硬编码事件字符串；通过 getContext 探测可用的事件源。
-    // 自动推进逻辑封装在 advanceChapter，事件绑定成功后即可每轮触发。
-    const ctx = window.SillyTavern && window.SillyTavern.getContext
-      ? window.SillyTavern.getContext()
-      : null;
+    // [RUNTIME-CHECK] 事件名与 eventSource 用法按 ST 版本确认。
+    // 自动推进逻辑封装在 advanceChapter，事件绑定成功后每轮触发。
     if (!ctx || !ctx.eventSource) {
-      renderStatus('事件源不可用，请使用手动注入按钮');
       return;
     }
     // 占位：真实事件绑定需以运行时导出的事件常量为准。
-    // 示例（需验证）：
-    //   const onMsg = () => { if (settings.autoAdvance) advanceChapter(); };
-    //   ctx.eventSource.on(<EVENT_CONSTANT>, onMsg);
-    //   listeners.push({ src: ctx.eventSource, name: <EVENT_CONSTANT>, fn: onMsg });
   }
 
   // —— 生命周期 ——
   function init() {
-    loadSettings();
-    loadState();
-    buildPanel();
+    try {
+      const context = window.SillyTavern && window.SillyTavern.getContext
+        ? window.SillyTavern.getContext()
+        : {};
+      ctx = context;
+      renderExtensionTemplateAsync = context.renderExtensionTemplateAsync;
+      extensionSettings = context.extensionSettings;
+      saveSettingsDebounced = context.saveSettingsDebounced;
+    } catch (e) {
+      /* 保持为 null，面板降级到 body */
+    }
+
+    // 确保 settings 容器存在后再渲染
+    const tryRender = () => {
+      if (document.getElementById('extensions_settings')) {
+        renderPanel();
+      } else {
+        setTimeout(tryRender, 100);
+      }
+    };
+    tryRender();
     registerAutoAdvance();
   }
 
-  function dispose() {
-    // 清理监听器、DOM
-    listeners.forEach((l) => {
-      try {
-        if (l.src && typeof l.src.off === 'function') l.src.off(l.name, l.fn);
-      } catch (e) { /* 静默 */ }
-    });
-    listeners = [];
-    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
-    panel = null;
-  }
-
-  // —— 导出 hooks（供 manifest 引用，名称与 manifest.hooks 对应）——
-  window[EXT_ID] = {
+  window[MODULE_NAME] = {
     init: init,
-    dispose: dispose,
     advanceChapter: advanceChapter,
   };
 
-  init();
+  // 若已在扩展环境，立即初始化
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    init();
+  } else {
+    document.addEventListener('DOMContentLoaded', init);
+  }
 })();

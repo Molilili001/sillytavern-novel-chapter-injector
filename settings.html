@@ -1,0 +1,38 @@
+<div class="inline-drawer" id="nci-drawer">
+  <div class="inline-drawer-toggle inline-drawer-header">
+    <b>小说章节自动注入器</b>
+    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+  </div>
+  <div class="inline-drawer-content">
+    <div class="nci-row">
+      <label>小说文件（.txt）</label>
+      <input type="file" id="nci-file" accept=".txt,.md,text/plain">
+    </div>
+    <div class="nci-row">
+      <label>作用域</label>
+      <select id="nci-scope">
+        <option value="chat">chat（跟聊天走）</option>
+        <option value="character">character（跟卡走）</option>
+        <option value="global">global（全局）</option>
+        <option value="extension">extension</option>
+      </select>
+    </div>
+    <div class="nci-row">
+      <label>变量名</label>
+      <input type="text" id="nci-var" class="text_pole" value="<%= variableName %>">
+    </div>
+    <div class="nci-row">
+      <label>分隔符</label>
+      <input type="text" id="nci-sep" class="text_pole" value="<%= chapterSeparator %>" placeholder="第（按第X章切）">
+    </div>
+    <div class="nci-row">
+      <label>进度变量名</label>
+      <input type="text" id="nci-idxvar" class="text_pole" value="<%= indexVariableName %>">
+    </div>
+    <div class="nci-row">
+      <button id="nci-next" class="menu_button">手动注入下一章</button>
+    </div>
+    <div class="nci-status" id="nci-status">未导入</div>
+    <div class="nci-preview" id="nci-preview"></div>
+  </div>
+</div>
