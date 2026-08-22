@@ -169,9 +169,17 @@
         const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
         text = utf8Decoder.decode(buffer);
       } catch (e) {
-        // 报 fatal 错说明不是纯净 UTF-8，大概率是 GBK/GB2312（国内网文通病）
-        const gbkDecoder = new TextDecoder('gbk');
-        text = gbkDecoder.decode(buffer);
+        // 不是纯净 UTF-8，大概率是 GBK/GB2312。用 gb18030 兜底。
+        // 为什么用 gb18030 而不是 gbk：gb18030 是标准强制支持的编码标签，
+        // 且兼容 GBK/GB2312，浏览器兼容性最稳。
+        try {
+          const gbDecoder = new TextDecoder('gb18030');
+          text = gbDecoder.decode(buffer);
+        } catch (e2) {
+          // 极端兜底：连 gb18030 都不支持时，用宽松 UTF-8 解，至少不崩
+          const looseDecoder = new TextDecoder('utf-8');
+          text = looseDecoder.decode(buffer);
+        }
       }
 
       state.chapters = splitChapters(text);
