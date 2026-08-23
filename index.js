@@ -474,8 +474,9 @@
   }
 
   // —— 手动注入按钮：挂在输入框（#send_textarea）上方 ——
-  // SillyTavern 输入区在不同版本里结构略有差异，这里做多级回退：
-  // 优先找 #send_textarea 的父容器，插到 textarea 前面；找不到再回退 #send_form。
+  // 酒馆输入区结构：#send_form（flex + flex-wrap:wrap）> #nonQRFormItems（横向 flex）> textarea。
+  // 若把按钮插进 #nonQRFormItems，会跟 textarea 挤在同一行，所以必须放进 #send_form 顶部，
+  // 再靠 flex-basis:100% 换行，独占输入栏最上面一行。
   function ensureManualInjectButton() {
     const enabled = getSettings().manualMode;
     if (!enabled) {
@@ -486,7 +487,6 @@
       return;
     }
 
-    const anchor = document.getElementById('send_textarea');
     if (!injectButton) {
       injectButton = document.createElement('button');
       injectButton.type = 'button';
@@ -496,12 +496,19 @@
       injectButton.addEventListener('click', () => advanceChapter());
     }
 
-    if (anchor && injectButton.parentElement !== anchor.parentElement) {
-      // 把按钮移到 textarea 前面（输入框上方）
-      anchor.parentElement.insertBefore(injectButton, anchor);
-    } else if (!anchor && !injectButton.parentElement) {
-      const form = document.getElementById('send_form');
-      if (form) form.insertBefore(injectButton, form.firstChild);
+    // 首选：插到 #send_form 顶部（输入栏最上方，独占一行）
+    const form = document.getElementById('send_form');
+    if (form) {
+      if (injectButton.parentElement !== form) {
+        form.insertBefore(injectButton, form.firstChild);
+      }
+      return;
+    }
+
+    // 兜底：找不到 #send_form 时，退回 textarea 的父容器顶部
+    const anchor = document.getElementById('send_textarea');
+    if (anchor && anchor.parentElement && injectButton.parentElement !== anchor.parentElement) {
+      anchor.parentElement.insertBefore(injectButton, anchor.parentElement.firstChild);
     }
   }
 

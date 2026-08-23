@@ -101,8 +101,11 @@
   padding-top: 6px;
 }
 
-/* 挂在输入框上方的手动注入按钮 */
+/* 挂在输入框上方的手动注入按钮：独占一整行，避免跟 textarea 挤在一排 */
 .nci-inject-btn {
+  flex: 0 0 100%;
+  width: 100%;
   margin: 4px 0;
   font-size: 13px;
+  border-radius: 6px;
 }
