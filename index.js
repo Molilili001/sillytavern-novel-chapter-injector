@@ -40,6 +40,10 @@
     batchSize: 1,
     // 是否在请求发出后自动推进
     autoAdvance: true,
+    // 循环模式：读到最后一章后，下一次从头开始，而不是停下
+    loopMode: false,
+    // 手动注入模式：在输入框上方挂一个按钮，点一下注入一段，自动推进失效
+    manualMode: false,
   });
 
   let ctx = null;
@@ -58,6 +62,10 @@
     chapters: [],
     index: 0,
   };
+
+  // 输入框上方的手动注入按钮（动态挂载，切换聊天后靠 keeper 自动找回位置）
+  let injectButton = null;
+  let injectButtonKeeper = null;
 
   // —— 设置读写（走酒馆 extensionSettings）——
   function getSettings() {
@@ -233,20 +241,26 @@
     }
   }
 
-  // —— 推进章节（支持批量：一次注入 N 章）——
+  // —— 推进章节（支持批量：一次注入 N 章；支持循环：读完从头开始）——
   async function advanceChapter() {
     if (!state.chapters.length) {
       renderStatus('尚未导入小说');
       return;
     }
-    const start = state.index;
-    if (start >= state.chapters.length) {
-      renderStatus('已读完最后一' + unitWord());
-      return;
-    }
     let size = Number(getSettings().batchSize);
     if (!Number.isFinite(size) || size < 1) size = 1;
     size = Math.floor(size);
+
+    let start = state.index;
+    if (start >= state.chapters.length) {
+      // 读完了：开启循环模式就回到开头，否则停下
+      if (getSettings().loopMode) {
+        start = 0;
+      } else {
+        renderStatus('已读完最后一' + unitWord());
+        return;
+      }
+    }
     const end = Math.min(start + size, state.chapters.length);
 
     // 取 [start, end) 这几章，用空行拼接
@@ -259,7 +273,11 @@
       state.index = newIdx;
       await saveChapters();
       await writeIndexToVariable(newIdx);
-      renderStatus('已注入第 ' + (start + 1) + ' ~ ' + newIdx + ' ' + unitWord() + '（共 ' + batch.length + ' ' + unitWord() + '）');
+      let msg = '已注入第 ' + (start + 1) + ' ~ ' + newIdx + ' ' + unitWord() + '（共 ' + batch.length + ' ' + unitWord() + '）';
+      if (getSettings().loopMode && newIdx >= state.chapters.length) {
+        msg += '，已到末尾，下次从头开始';
+      }
+      renderStatus(msg);
       renderChapterPreview();
     }
   }
@@ -308,6 +326,9 @@
         chapterSeparator: settings.chapterSeparator,
         indexVariableName: settings.indexVariableName,
         batchSize: settings.batchSize,
+        autoAdvance: settings.autoAdvance,
+        loopMode: settings.loopMode,
+        manualMode: settings.manualMode,
       }
     );
     const target = document.getElementById('extensions_settings') || document.body;
@@ -315,12 +336,30 @@
 
     bindEvents();
     await loadChapters();
+    updateSettingsVisibility();
     if (state.chapters.length) {
       renderStatus('已恢复 ' + state.chapters.length + ' ' + unitWord() + '（当前第 ' + (state.index + 1) + ' ' + unitWord() + '）');
     } else {
       renderStatus('未导入');
     }
     renderChapterPreview();
+    ensureManualInjectButton();
+  }
+
+  // —— 根据当前设置，动态显示/隐藏相关设置行 ——
+  function updateSettingsVisibility() {
+    const mode = getSettings().splitMode || 'char';
+    const sizeRow = document.getElementById('nci-row-splitsize');
+    const sepRow = document.getElementById('nci-row-sep');
+    if (sizeRow) sizeRow.style.display = (mode === 'char') ? '' : 'none';
+    if (sepRow) sepRow.style.display = (mode === 'chapter') ? '' : 'none';
+
+    // 手动注入模式开启时，提示自动推进已失效；反之亦然
+    const autoHint = document.getElementById('nci-auto-hint');
+    const manualHint = document.getElementById('nci-manual-hint');
+    const settings = getSettings();
+    if (autoHint) autoHint.style.display = settings.manualMode ? '' : 'none';
+    if (manualHint) manualHint.style.display = settings.autoAdvance ? '' : 'none';
   }
 
   function bindEvents() {
@@ -333,6 +372,9 @@
     const idxInput = document.getElementById('nci-idxvar');
     const batchInput = document.getElementById('nci-batch');
     const nextBtn = document.getElementById('nci-next');
+    const autoCheck = document.getElementById('nci-auto');
+    const manualCheck = document.getElementById('nci-manual');
+    const loopCheck = document.getElementById('nci-loop');
 
     // 点醒目的「导入」按钮，触发隐藏的 file input 打开文件选择框。
     if (importBtn && fileInput) {
@@ -356,6 +398,7 @@
       splitModeSel.addEventListener('change', () => {
         getSettings().splitMode = splitModeSel.value === 'char' ? 'char' : 'chapter';
         persistSettings();
+        updateSettingsVisibility();
       });
     }
     if (splitSizeInput) {
@@ -391,6 +434,83 @@
     if (nextBtn) {
       nextBtn.addEventListener('click', () => advanceChapter());
     }
+
+    // —— 推进模式：自动推进 / 手动注入 互斥 ——
+    if (autoCheck) {
+      autoCheck.checked = !!getSettings().autoAdvance;
+      autoCheck.addEventListener('change', () => {
+        getSettings().autoAdvance = autoCheck.checked;
+        if (autoCheck.checked) {
+          // 开自动推进就关手动注入
+          getSettings().manualMode = false;
+          if (manualCheck) manualCheck.checked = false;
+        }
+        persistSettings();
+        updateSettingsVisibility();
+        ensureManualInjectButton();
+      });
+    }
+    if (manualCheck) {
+      manualCheck.checked = !!getSettings().manualMode;
+      manualCheck.addEventListener('change', () => {
+        getSettings().manualMode = manualCheck.checked;
+        if (manualCheck.checked) {
+          // 开手动注入就关自动推进
+          getSettings().autoAdvance = false;
+          if (autoCheck) autoCheck.checked = false;
+        }
+        persistSettings();
+        updateSettingsVisibility();
+        ensureManualInjectButton();
+      });
+    }
+    if (loopCheck) {
+      loopCheck.checked = !!getSettings().loopMode;
+      loopCheck.addEventListener('change', () => {
+        getSettings().loopMode = loopCheck.checked;
+        persistSettings();
+      });
+    }
+  }
+
+  // —— 手动注入按钮：挂在输入框（#send_textarea）上方 ——
+  // SillyTavern 输入区在不同版本里结构略有差异，这里做多级回退：
+  // 优先找 #send_textarea 的父容器，插到 textarea 前面；找不到再回退 #send_form。
+  function ensureManualInjectButton() {
+    const enabled = getSettings().manualMode;
+    if (!enabled) {
+      if (injectButton && injectButton.parentElement) {
+        injectButton.parentElement.removeChild(injectButton);
+      }
+      injectButton = null;
+      return;
+    }
+
+    const anchor = document.getElementById('send_textarea');
+    if (!injectButton) {
+      injectButton = document.createElement('button');
+      injectButton.type = 'button';
+      injectButton.id = 'nci-inject-btn';
+      injectButton.className = 'menu_button nci-inject-btn';
+      injectButton.textContent = '📖 注入下一段';
+      injectButton.addEventListener('click', () => advanceChapter());
+    }
+
+    if (anchor && injectButton.parentElement !== anchor.parentElement) {
+      // 把按钮移到 textarea 前面（输入框上方）
+      anchor.parentElement.insertBefore(injectButton, anchor);
+    } else if (!anchor && !injectButton.parentElement) {
+      const form = document.getElementById('send_form');
+      if (form) form.insertBefore(injectButton, form.firstChild);
+    }
+  }
+
+  function startInjectButtonKeeper() {
+    if (injectButtonKeeper) return;
+    injectButtonKeeper = setInterval(() => {
+      // 只在手动注入模式开启时才检查，成本极低
+      if (getSettings().manualMode) ensureManualInjectButton();
+    }, 1500);
   }
 
   // —— 自动推进事件监听 ——
@@ -403,6 +523,8 @@
     }
     if (autoAdvanceHandler) return; // 防止重复绑定
     autoAdvanceHandler = () => {
+      // 手动注入模式下，自动推进失效
+      if (getSettings().manualMode) return;
       if (getSettings().autoAdvance) advanceChapter();
     };
     // [RUNTIME-CHECK] event_types 里的确切常量名按 ST 版本确认，常见为 GENERATION_ENDED。
@@ -453,6 +575,7 @@
     };
     tryRender();
     registerAutoAdvance();
+    startInjectButtonKeeper();
   }
 
   window[MODULE_NAME] = {

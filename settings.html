@@ -1,65 +1,96 @@
 <div class="inline-drawer" id="nci-drawer">
   <div class="inline-drawer-toggle inline-drawer-header">
-    <b>小说章节自动注入器</b>
+    <b>📖 小说章节自动注入器</b>
     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
   </div>
   <div class="inline-drawer-content">
-  <div class="nci-intro">
-    把一篇 txt 小说按「章节」或「字数」自动切分，每轮请求后把当前段写入一个<b>聊天局部变量</b>，供预设里用 <code>{{getvar::变量名}}</code> 读取。
-  </div>
 
-  <div class="nci-step">
-    <div class="nci-step-title">① 导入小说文件</div>
-    <div class="nci-desc">选一个 .txt 文件，脚本会按下面的分割模式（按章节或按字数）自动切成一段段。</div>
-    <button id="nci-import-btn" class="menu_button">📄 选择小说文件并导入</button>
-    <input type="file" id="nci-file" class="nci-file-hidden" accept=".txt,.md,text/plain">
-  </div>
+    <div class="nci-intro">
+      把一篇 txt 小说按「章节」或「字数」自动切分，把当前段写入一个<b>聊天局部变量</b>，供预设里用 <code>{{getvar::变量名}}</code> 读取。
+    </div>
 
-  <div class="nci-step">
-    <div class="nci-step-title">② 变量名（预设里读取用）</div>
-    <div class="nci-desc">当前这一段内容会写入这个<b>聊天局部变量</b>（每张聊天独立）。之后在预设里写 <code>{{getvar::变量名}}</code> 就能读到当前段正文。</div>
-    <input type="text" id="nci-var" class="text_pole" value="{{variableName}}">
-  </div>
+    <!-- ① 导入 -->
+    <div class="nci-step">
+      <div class="nci-step-title">① 导入小说文件</div>
+      <div class="nci-desc">选一个 .txt 文件，脚本会按下面的分割模式自动切成一段段。</div>
+      <button id="nci-import-btn" class="menu_button nci-btn-wide">📄 选择小说文件并导入</button>
+      <input type="file" id="nci-file" class="nci-file-hidden" accept=".txt,.md,text/plain">
+    </div>
 
-  <div class="nci-step">
-    <div class="nci-step-title">⚙ 高级设置（一般不用动）</div>
-    <div class="nci-row">
-      <label>分割模式</label>
-      <select id="nci-splitmode">
-        <option value="chapter">按章节（第X章）</option>
-        <option value="char" selected>按字数</option>
-      </select>
+    <!-- ② 变量名 -->
+    <div class="nci-step">
+      <div class="nci-step-title">② 变量名（预设里读取用）</div>
+      <div class="nci-desc">当前段内容会写入这个<b>聊天局部变量</b>（每张聊天独立）。之后在预设里写 <code>{{getvar::变量名}}</code> 就能读到。</div>
+      <div class="nci-row">
+        <label>章节变量名</label>
+        <input type="text" id="nci-var" class="text_pole" value="{{variableName}}">
+      </div>
+      <div class="nci-row">
+        <label>进度变量名</label>
+        <input type="text" id="nci-idxvar" class="text_pole" value="{{indexVariableName}}">
+      </div>
+      <div class="nci-desc nci-desc-tight">进度变量记录「读到第几段」，别跟章节变量名重名。</div>
     </div>
-    <div class="nci-desc">「按章节」按行首第X章切；「按字数」按下面每段字数切。</div>
-    <div class="nci-row">
-      <label>每段字数</label>
-      <input type="number" id="nci-splitsize" class="text_pole" value="{{splitSize}}" min="1" step="1">
-    </div>
-    <div class="nci-desc">仅「按字数」模式生效，比如 10000 表示每 10000 字左右切一段。</div>
-    <div class="nci-row">
-      <label>分隔符</label>
-      <input type="text" id="nci-sep" class="text_pole" value="{{chapterSeparator}}" placeholder="第（按第X章切）">
-    </div>
-    <div class="nci-desc">填「第」= 按行首第X章切；填其它字符 = 按那个字符切。</div>
-    <div class="nci-row">
-      <label>进度变量名</label>
-      <input type="text" id="nci-idxvar" class="text_pole" value="{{indexVariableName}}">
-    </div>
-    <div class="nci-desc">记录「读到第几章」的变量名，别跟上面的章节变量名重名。</div>
-    <div class="nci-row">
-      <label>每次注入段数</label>
-      <input type="number" id="nci-batch" class="text_pole" value="{{batchSize}}" min="1" step="1">
-    </div>
-    <div class="nci-desc">一次注入几段，比如填 3 就把 3 段拼在一起写入变量、进度一次跳 3 段。章节模式下「段」就是「章」。</div>
-  </div>
 
-  <div class="nci-step">
-    <div class="nci-step-title">③ 推进剧情</div>
-    <div class="nci-desc">导入后点下面的按钮，把第一段写入变量；每轮请求后会自动推进（自动事件绑定需运行时确认）。</div>
-    <button id="nci-next" class="menu_button">▶ 手动注入下一段</button>
-  </div>
+    <!-- ③ 分割设置 -->
+    <div class="nci-step">
+      <div class="nci-step-title">③ 分割设置</div>
+      <div class="nci-row">
+        <label>分割模式</label>
+        <select id="nci-splitmode">
+          <option value="char">按字数</option>
+          <option value="chapter">按章节（第X章）</option>
+        </select>
+      </div>
+      <div class="nci-row" id="nci-row-splitsize">
+        <label>每段字数</label>
+        <input type="number" id="nci-splitsize" class="text_pole" value="{{splitSize}}" min="1" step="1">
+      </div>
+      <div class="nci-row" id="nci-row-sep" style="display:none">
+        <label>分隔符</label>
+        <input type="text" id="nci-sep" class="text_pole" value="{{chapterSeparator}}" placeholder="第（按第X章切）">
+      </div>
+      <div class="nci-row">
+        <label>每次注入段数</label>
+        <input type="number" id="nci-batch" class="text_pole" value="{{batchSize}}" min="1" step="1">
+      </div>
+      <div class="nci-desc nci-desc-tight">「按字数」用每段字数切，「按章节」用分隔符切。每次注入段数填 3 就把 3 段拼在一起写入、进度一次跳 3 段。</div>
+    </div>
 
-  <div class="nci-status" id="nci-status">未导入</div>
-  <div class="nci-preview" id="nci-preview"></div>
+    <!-- ④ 推进模式 -->
+    <div class="nci-step">
+      <div class="nci-step-title">④ 推进模式</div>
+
+      <label class="nci-toggle">
+        <input type="checkbox" id="nci-auto" {{#if autoAdvance}}checked{{/if}}>
+        <span>请求完成后自动推进</span>
+      </label>
+      <div class="nci-desc nci-desc-tight">生成结束后自动把下一段写入变量。</div>
+      <div class="nci-hint" id="nci-auto-hint" style="display:none">手动注入模式已开启，自动推进暂时失效。</div>
+
+      <label class="nci-toggle">
+        <input type="checkbox" id="nci-manual" {{#if manualMode}}checked{{/if}}>
+        <span>手动注入模式</span>
+      </label>
+      <div class="nci-desc nci-desc-tight">开启后在输入框上方挂一个按钮，点一下注入下一段，不再随请求自动推进。</div>
+      <div class="nci-hint" id="nci-manual-hint" style="display:none">自动推进已开启，手动注入按钮不会出现。</div>
+
+      <label class="nci-toggle">
+        <input type="checkbox" id="nci-loop" {{#if loopMode}}checked{{/if}}>
+        <span>循环模式</span>
+      </label>
+      <div class="nci-desc nci-desc-tight">读到最后一段后，下一次从头开始，而不是停下。</div>
+    </div>
+
+    <!-- ⑤ 立即推进 -->
+    <div class="nci-step">
+      <div class="nci-step-title">⑤ 立即推进</div>
+      <div class="nci-desc">导入后点一下，把第一段写入变量；之后按上面的推进模式继续。</div>
+      <button id="nci-next" class="menu_button nci-btn-wide">▶ 手动注入下一段</button>
+    </div>
+
+    <div class="nci-status" id="nci-status">未导入</div>
+    <div class="nci-preview" id="nci-preview"></div>
+
   </div>
 </div>

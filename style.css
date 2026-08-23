@@ -1,48 +1,96 @@
+/* 小说章节自动注入器 —— 面板样式 */
+
 .nci-intro {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
-  opacity: 0.9;
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.1);
 }
+
 .nci-step {
   margin-bottom: 14px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.18);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.04);
 }
-.nci-step:last-of-type {
-  border-bottom: none;
-}
+
 .nci-step-title {
   font-weight: 700;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
+
 .nci-desc {
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
   opacity: 0.75;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
+
+.nci-desc-tight {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
 .nci-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
 }
+
 .nci-row label {
-  display: inline-block;
-  min-width: 80px;
+  flex: 0 0 90px;
+  font-size: 13px;
+  opacity: 0.9;
 }
+
 .nci-row input[type="text"],
+.nci-row input[type="number"],
 .nci-row select {
-  width: 200px;
+  flex: 1;
+  min-width: 0;
 }
+
+.nci-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.nci-toggle input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.nci-hint {
+  margin: 4px 0 4px 22px;
+  font-size: 12px;
+  color: #e0a030;
+  opacity: 0.9;
+}
+
+.nci-btn-wide {
+  width: 100%;
+}
+
 .nci-file-hidden {
   display: none;
 }
+
 .nci-status {
   margin-top: 10px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   font-size: 13px;
-  border-radius: 4px;
+  border-radius: 6px;
   background: rgba(128, 128, 128, 0.12);
+  word-break: break-all;
 }
+
 .nci-preview {
   margin-top: 6px;
   max-height: 120px;
@@ -51,4 +99,10 @@
   white-space: pre-wrap;
   border-top: 1px solid rgba(128, 128, 128, 0.3);
   padding-top: 6px;
+}
+
+/* 挂在输入框上方的手动注入按钮 */
+.nci-inject-btn {
+  margin: 4px 0;
+  font-size: 13px;
 }
