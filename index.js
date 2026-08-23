@@ -61,11 +61,13 @@
   const state = {
     chapters: [],
     index: 0,
+    chatId: null, // 当前 index 属于哪个聊天（多聊天进度隔离）
   };
 
   // 输入框上方的手动注入按钮（动态挂载，切换聊天后靠 keeper 自动找回位置）
   let injectButton = null;
   let injectButtonKeeper = null;
+  let initialized = false;
 
   // —— 设置读写（走酒馆 extensionSettings）——
   function getSettings() {
@@ -84,18 +86,49 @@
     if (typeof saveSettingsDebounced === 'function') saveSettingsDebounced();
   }
 
+  // —— 当前聊天 ID：进度按聊天隔离，正文变量本就是每张聊天独立的 ——
+  function getCurrentChatId() {
+    try {
+      const context = window.SillyTavern && window.SillyTavern.getContext
+        ? window.SillyTavern.getContext()
+        : null;
+      if (context) {
+        if (typeof context.getCurrentChatId === 'function') {
+          const id = context.getCurrentChatId();
+          if (id) return String(id);
+        }
+        if (context.chatId) return String(context.chatId);
+      }
+    } catch (e) {
+      /* 静默 */
+    }
+    return 'default';
+  }
+
   // —— 章节持久化：存 localforage（官方推荐的大块数据存储，IndexedDB）——
   // 官方文档明确禁止往 extensionSettings 塞大块数据，应改用 localforage。
   // 存 localforage 独立于 settings.json，重启不丢，容量大。
+  // 章节数组全局共享（同一本小说）；进度 index 按当前聊天 ID 分开存，避免多聊天串档。
   async function loadChapters() {
     if (!localforage) return;
     try {
       const chapters = await localforage.getItem(MODULE_NAME + ':chapters');
-      const index = await localforage.getItem(MODULE_NAME + ':index');
       if (Array.isArray(chapters) && chapters.length) {
         state.chapters = chapters;
-        state.index = Number(index) || 0;
       }
+      await loadIndexForCurrentChat();
+    } catch (e) {
+      /* 静默 */
+    }
+  }
+
+  async function loadIndexForCurrentChat() {
+    if (!localforage) return;
+    try {
+      const chatId = getCurrentChatId();
+      const index = await localforage.getItem(MODULE_NAME + ':index:' + chatId);
+      state.index = Number(index) || 0;
+      state.chatId = chatId;
     } catch (e) {
       /* 静默 */
     }
@@ -105,9 +138,27 @@
     if (!localforage) return;
     try {
       await localforage.setItem(MODULE_NAME + ':chapters', state.chapters);
-      await localforage.setItem(MODULE_NAME + ':index', state.index);
+      await saveIndexForCurrentChat();
     } catch (e) {
       renderStatus('持久化失败：' + (e && e.message ? e.message : e));
+    }
+  }
+
+  async function saveIndexForCurrentChat() {
+    if (!localforage) return;
+    try {
+      const chatId = getCurrentChatId();
+      await localforage.setItem(MODULE_NAME + ':index:' + chatId, state.index);
+      state.chatId = chatId;
+    } catch (e) {
+      /* 静默 */
+    }
+  }
+
+  // 切换聊天后首次推进前，重新加载对应聊天的进度
+  async function ensureIndexLoaded() {
+    if (state.chatId !== getCurrentChatId()) {
+      await loadIndexForCurrentChat();
     }
   }
 
@@ -192,9 +243,12 @@
 
       state.chapters = splitChapters(text);
       state.index = 0;
+      state.chatId = null;
       await saveChapters();
       renderStatus('已导入 ' + state.chapters.length + ' ' + unitWord());
       renderChapterPreview();
+      // 导入后立即注入第一段，保证第一条消息时 {{getvar::}} 已就位
+      await advanceChapter();
     };
     reader.onerror = () => renderStatus('读取文件失败');
     // 核心：改用 readAsArrayBuffer，不让浏览器瞎猜编码，自己拿原始字节解码
@@ -247,6 +301,7 @@
       renderStatus('尚未导入小说');
       return;
     }
+    await ensureIndexLoaded();
     let size = Number(getSettings().batchSize);
     if (!Number.isFinite(size) || size < 1) size = 1;
     size = Math.floor(size);
@@ -308,12 +363,25 @@
   function renderChapterPreview() {
     const el = document.getElementById('nci-preview');
     if (!el) return;
+    if (state.index >= state.chapters.length) {
+      // 读到末尾：循环模式预告从第一段重来，否则提示已读完
+      if (getSettings().loopMode && state.chapters.length) {
+        const first = state.chapters[0] || '';
+        el.textContent = '（已读完，下次从第一' + unitWord() + '重新开始）\n' + (first.length > 200 ? first.slice(0, 200) + '…' : first);
+      } else {
+        el.textContent = '已读完最后一' + unitWord() + '，全文结束';
+      }
+      return;
+    }
     const cur = state.chapters[state.index] || '';
     el.textContent = cur.length > 200 ? cur.slice(0, 200) + '…' : cur;
   }
 
   async function renderPanel() {
     if (!renderExtensionTemplateAsync && !renderExtensionTemplate) return;
+    // 移除旧面板，防止重复 init 时 DOM 重复、事件绑到旧节点
+    const oldDrawer = document.getElementById('nci-drawer');
+    if (oldDrawer) oldDrawer.remove();
     const settings = getSettings();
     // 模板是 Handlebars 语法（{{var}}），路径用扩展目录名。
     const html = await renderTemplate(
@@ -552,8 +620,26 @@
     autoAdvanceHandler = null;
   }
 
+  // —— 清理资源：事件监听 + 定时器 + 挂载的按钮 ——
+  function cleanup() {
+    unregisterAutoAdvance();
+    if (injectButtonKeeper) {
+      clearInterval(injectButtonKeeper);
+      injectButtonKeeper = null;
+    }
+    if (injectButton && injectButton.parentElement) {
+      injectButton.parentElement.removeChild(injectButton);
+    }
+    injectButton = null;
+  }
+
   // —— 生命周期 ——
   function init() {
+    // 防重入：重复 init 先清理旧资源，再重新绑定
+    if (initialized) {
+      cleanup();
+    }
+    initialized = true;
     try {
       const context = window.SillyTavern && window.SillyTavern.getContext
         ? window.SillyTavern.getContext()
@@ -589,6 +675,9 @@
     init: init,
     advanceChapter: advanceChapter,
   };
+
+  // 页面卸载时清理定时器与事件，避免泄漏
+  window.addEventListener('beforeunload', cleanup);
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     init();
