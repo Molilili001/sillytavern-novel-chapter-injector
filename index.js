@@ -296,7 +296,7 @@
   }
 
   // —— 推进章节（支持批量：一次注入 N 章；支持循环：读完从头开始）——
-  async function advanceChapter() {
+  async function advanceChapter(options = {}) {
     if (!state.chapters.length) {
       renderStatus('尚未导入小说');
       return;
@@ -334,6 +334,31 @@
       }
       renderStatus(msg);
       renderChapterPreview();
+      // 手动注入时给用户明确的成功反馈（toast 气泡 + 按钮文字闪一下）
+      if (options.toast) notifyInjected(msg);
+    }
+  }
+
+  // —— 注入成功提醒：手动注入时给用户明确反馈 ——
+  // 优先用酒馆自带的 toastr（屏幕右上角气泡），不可用时退回改按钮文字。
+  function notifyInjected(msg) {
+    try {
+      if (window.toastr && typeof window.toastr.success === 'function') {
+        window.toastr.success(msg, '注入成功');
+      }
+    } catch (e) {
+      /* 静默 */
+    }
+    // 按钮层面反馈：短暂变成功文字，给不看右上角的人兜底
+    const btn = injectButton;
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = '✅ 已注入';
+      btn.classList.add('nci-inject-ok');
+      setTimeout(() => {
+        if (btn.textContent === '✅ 已注入') btn.textContent = original;
+        btn.classList.remove('nci-inject-ok');
+      }, 1600);
     }
   }
 
@@ -561,7 +586,7 @@
       injectButton.id = 'nci-inject-btn';
       injectButton.className = 'menu_button nci-inject-btn';
       injectButton.textContent = '📖 注入下一段';
-      injectButton.addEventListener('click', () => advanceChapter());
+      injectButton.addEventListener('click', () => advanceChapter({ toast: true }));
     }
 
     // 首选：插到 #send_form 顶部（输入栏最上方，独占一行）

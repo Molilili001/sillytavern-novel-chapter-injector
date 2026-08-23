@@ -108,4 +108,11 @@
   margin: 4px 0;
   font-size: 13px;
   border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* 注入成功后的短暂绿色反馈 */
+.nci-inject-btn.nci-inject-ok {
+  background: rgba(40, 167, 69, 0.9);
+  color: #fff;
 }
