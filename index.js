@@ -63,6 +63,7 @@
     index: 0,
     chatId: null, // 当前 index 属于哪个聊天（多聊天进度隔离）
     detectedFormat: '', // 导入时自动检测到的章节格式（如「第X章」），空串表示未检测到
+    rawText: '', // 原始全文，切换分割模式时重新切分用
   };
 
   // 输入框上方的手动注入按钮（动态挂载，切换聊天后靠 keeper 自动找回位置）
@@ -119,6 +120,8 @@
       }
       const fmt = await localforage.getItem(MODULE_NAME + ':detectedFormat');
       if (typeof fmt === 'string' && fmt) state.detectedFormat = fmt;
+      const raw = await localforage.getItem(MODULE_NAME + ':rawText');
+      if (typeof raw === 'string' && raw) state.rawText = raw;
       await loadIndexForCurrentChat();
     } catch (e) {
       /* 静默 */
@@ -145,6 +148,16 @@
       await saveIndexForCurrentChat();
     } catch (e) {
       renderStatus('持久化失败：' + (e && e.message ? e.message : e));
+    }
+  }
+
+  // 原始全文单独持久化（只在导入时写一次，避免每次推进都重写大文本）
+  async function saveRawText() {
+    if (!localforage) return;
+    try {
+      await localforage.setItem(MODULE_NAME + ':rawText', state.rawText || '');
+    } catch (e) {
+      /* 静默 */
     }
   }
 
@@ -212,17 +225,36 @@
     return empty;
   }
 
-  // —— 文本切分（导入时自动检测章节格式，检测不到再走字数切分）——
-  function splitChapters(text) {
+  // —— 文本切分 ——
+  // 导入时自动判断：检测到章节就按章节切，否则按字数切；结果回写到 splitMode，保持 UI 一致
+  function splitAuto(text) {
     const detected = detectChapterFormat(text);
     if (detected.mode === 'chapter') {
       state.detectedFormat = detected.label;
-      return { chapters: splitByChapter(text, detected.headingRe), detected: detected, fallback: false };
+      getSettings().splitMode = 'chapter';
+      persistSettings();
+      return { chapters: splitByChapter(text, detected.headingRe), detected: detected, ok: true, mode: 'chapter' };
     }
     state.detectedFormat = '';
-    // 用户手动选了「按章节」却检测不到标题，算降级，导入后要提示
-    const manualChapter = (getSettings().splitMode || 'char') === 'chapter';
-    return { chapters: splitBySize(text), detected: detected, fallback: manualChapter };
+    getSettings().splitMode = 'char';
+    persistSettings();
+    return { chapters: splitBySize(text), detected: detected, ok: true, mode: 'char' };
+  }
+
+  // 按用户选择的 splitMode 强制切分（手动切换分割模式时用）
+  function splitByMode(text) {
+    const mode = getSettings().splitMode || 'char';
+    const detected = detectChapterFormat(text);
+    if (mode === 'chapter') {
+      if (detected.mode === 'chapter') {
+        state.detectedFormat = detected.label;
+        return { chapters: splitByChapter(text, detected.headingRe), detected: detected, ok: true, mode: 'chapter' };
+      }
+      state.detectedFormat = '';
+      return { chapters: null, detected: detected, ok: false, mode: 'chapter' };
+    }
+    state.detectedFormat = '';
+    return { chapters: splitBySize(text), detected: detected, ok: true, mode: 'char' };
   }
 
   // 章节模式：按标题行切，支持第X章/序章/番外/数字序号/中文序号
@@ -303,15 +335,19 @@
         }
       }
 
-      const splitResult = splitChapters(text);
+      const splitResult = splitAuto(text);
       state.chapters = splitResult.chapters;
+      state.rawText = text;
       state.index = 0;
       state.chatId = null;
       await saveChapters();
-      if (splitResult.detected.mode === 'chapter') {
+      await saveRawText();
+      // 同步分割模式下拉框，跟自动检测结果一致
+      const modeSel = document.getElementById('nci-splitmode');
+      if (modeSel) modeSel.value = getSettings().splitMode || 'char';
+      updateSettingsVisibility();
+      if (splitResult.mode === 'chapter') {
         renderStatus('已导入 ' + state.chapters.length + ' 章（检测到章节格式：' + splitResult.detected.label + '，共 ' + splitResult.detected.count + ' 个标题）');
-      } else if (splitResult.fallback) {
-        renderStatus('未检测到章节标题，已降级按字数切分，共 ' + state.chapters.length + ' 段');
       } else {
         renderStatus('已导入 ' + state.chapters.length + ' 段（未检测到章节标题，按字数切分）');
       }
@@ -618,10 +654,31 @@
     }
     if (splitModeSel) {
       splitModeSel.value = getSettings().splitMode || 'char';
-      splitModeSel.addEventListener('change', () => {
-        getSettings().splitMode = splitModeSel.value === 'char' ? 'char' : 'chapter';
+      splitModeSel.addEventListener('change', async () => {
+        const want = splitModeSel.value === 'char' ? 'char' : 'chapter';
+        getSettings().splitMode = want;
         persistSettings();
         updateSettingsVisibility();
+        // 没有原始文本时无法重新切分（尚未导入），只记住用户选择
+        if (!state.rawText) return;
+        const result = splitByMode(state.rawText);
+        if (!result.ok) {
+          // 用户选了按章节，但检测不到标题：保持按字数，弹回下拉框
+          renderStatus('未检测到章节标题，无法按章节切分，已保持按字数');
+          splitModeSel.value = 'char';
+          getSettings().splitMode = 'char';
+          persistSettings();
+          updateSettingsVisibility();
+          return;
+        }
+        state.chapters = result.chapters;
+        state.index = 0;
+        state.chatId = null;
+        await saveChapters();
+        renderToc();
+        renderChapterPreview();
+        renderStatus('已按' + (want === 'chapter' ? '章节' : '字数') + '重新切分，共 ' + state.chapters.length + (want === 'chapter' ? ' 章' : ' 段'));
+        await advanceChapter();
       });
     }
     if (splitSizeInput) {
