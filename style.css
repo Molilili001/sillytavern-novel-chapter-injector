@@ -10,16 +10,55 @@
 }
 
 .nci-step {
-  margin-bottom: 14px;
-  padding: 12px;
+  margin-bottom: 10px;
   border: 1px solid rgba(128, 128, 128, 0.18);
   border-radius: 8px;
   background: rgba(128, 128, 128, 0.04);
+  overflow: hidden;
+}
+
+.nci-step-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.nci-step-toggle:hover {
+  background: rgba(128, 128, 128, 0.06);
 }
 
 .nci-step-title {
   font-weight: 700;
-  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.nci-step-icon {
+  flex: 0 0 auto;
+  font-size: 12px;
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.nci-step.collapsed .nci-step-icon {
+  transform: rotate(-90deg);
+}
+
+.nci-step-body {
+  padding: 0 12px 12px;
+}
+
+.nci-step.collapsed .nci-step-body {
+  display: none;
 }
 
 .nci-desc {

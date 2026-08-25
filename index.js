@@ -766,6 +766,19 @@
         persistSettings();
       });
     }
+
+    // —— 功能区块折叠开关（事件委托，避免逐个绑定）——
+    const drawer = document.getElementById('nci-drawer');
+    if (drawer) {
+      drawer.addEventListener('click', (e) => {
+        const toggle = e.target.closest('.nci-step-toggle');
+        if (!toggle) return;
+        const step = toggle.closest('.nci-step');
+        if (!step) return;
+        const collapsed = step.classList.toggle('collapsed');
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+      });
+    }
   }
 
   // —— 手动注入按钮：挂在输入框（#send_textarea）上方 ——
