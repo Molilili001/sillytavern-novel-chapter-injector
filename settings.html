@@ -82,9 +82,25 @@
       <div class="nci-desc nci-desc-tight">读到最后一段后，下一次从头开始，而不是停下。</div>
     </div>
 
-    <!-- ⑤ 立即推进 -->
+    <!-- ⑤ 跳转与目录 -->
     <div class="nci-step">
-      <div class="nci-step-title">⑤ 立即推进</div>
+      <div class="nci-step-title">⑤ 跳转与目录</div>
+      <div class="nci-desc">想回看或跳段，从目录选一段，或直接输段号跳转。</div>
+      <div class="nci-row">
+        <label>目录</label>
+        <select id="nci-toc" class="text_pole"></select>
+      </div>
+      <div class="nci-row">
+        <label>跳转到第</label>
+        <input type="number" id="nci-jump" class="text_pole" min="1" step="1" placeholder="段号">
+        <button id="nci-jump-btn" class="menu_button">跳转</button>
+      </div>
+      <div class="nci-desc nci-desc-tight">目录和段号都从 1 开始计；跳转即注入该段，进度推进到下一段。</div>
+    </div>
+
+    <!-- ⑥ 立即推进 -->
+    <div class="nci-step">
+      <div class="nci-step-title">⑥ 立即推进</div>
       <div class="nci-desc">导入后点一下，把第一段写入变量；之后按上面的推进模式继续。</div>
       <button id="nci-next" class="menu_button nci-btn-wide">▶ 手动注入下一段</button>
     </div>

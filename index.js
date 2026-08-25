@@ -62,6 +62,7 @@
     chapters: [],
     index: 0,
     chatId: null, // 当前 index 属于哪个聊天（多聊天进度隔离）
+    detectedFormat: '', // 导入时自动检测到的章节格式（如「第X章」），空串表示未检测到
   };
 
   // 输入框上方的手动注入按钮（动态挂载，切换聊天后靠 keeper 自动找回位置）
@@ -116,6 +117,8 @@
       if (Array.isArray(chapters) && chapters.length) {
         state.chapters = chapters;
       }
+      const fmt = await localforage.getItem(MODULE_NAME + ':detectedFormat');
+      if (typeof fmt === 'string' && fmt) state.detectedFormat = fmt;
       await loadIndexForCurrentChat();
     } catch (e) {
       /* 静默 */
@@ -138,6 +141,7 @@
     if (!localforage) return;
     try {
       await localforage.setItem(MODULE_NAME + ':chapters', state.chapters);
+      await localforage.setItem(MODULE_NAME + ':detectedFormat', state.detectedFormat || '');
       await saveIndexForCurrentChat();
     } catch (e) {
       renderStatus('持久化失败：' + (e && e.message ? e.message : e));
@@ -162,24 +166,82 @@
     }
   }
 
-  // —— 文本切分（章节模式 / 字数模式二选一）——
-  function splitChapters(text) {
-    const mode = getSettings().splitMode || 'char';
-    if (mode === 'char') {
-      return splitBySize(text);
-    }
-    return splitByChapter(text);
+  // —— 中文小说章节标题识别 ——
+  // 覆盖常见网文格式：
+  //   第X章/回/卷/部/节/篇/集/幕/话（阿拉伯、全角、中文数字混用）
+  //   特殊标题词：序章/楔子/引子/前言/终章/尾声/番外/外传等
+  //   纯数字序号：1. 01、1）(1) 1：
+  //   中文序号：一、 （一） 一．
+  const CN_NUM_CHARS = '零〇一二三四五六七八九十百千万两';
+  const HEADING_DI_RE = new RegExp('^第[0-9０-９' + CN_NUM_CHARS + ']+[章节回卷部篇集幕話话](?:\\s|[:：.、．]|$)');
+  const HEADING_SPECIAL_RE = /^(序章|序言|楔子|引子|前言|自序|终章|尾声|后记|番外(?:篇)?|外传|卷首语)(?:\s|[:：.、．]|$)/;
+  const HEADING_NUM_RE = /^\s*[0-9０-９]+\s*[.、．·:：)）]/;
+  const HEADING_CNNUM_RE = /^\s*[（(]?[一二三四五六七八九十百千万零〇]+\s*[、.．)）]/;
+  // 章节式标题（第X章 + 序章/番外等特殊词）合用的切分正则
+  const HEADING_DI_SPECIAL_RE = new RegExp(
+    '^(?:第[0-9０-９' + CN_NUM_CHARS + ']+[章节回卷部篇集幕話话]|序章|序言|楔子|引子|前言|自序|终章|尾声|后记|番外(?:篇)?|外传|卷首语)(?:\\s|[:：.、．]|$)'
+  );
+
+  // 判断某行是否为任意章节标题行（用于目录标题提取）
+  function isHeadingLine(line) {
+    return HEADING_DI_RE.test(line) || HEADING_SPECIAL_RE.test(line) || HEADING_NUM_RE.test(line) || HEADING_CNNUM_RE.test(line);
   }
 
-  // 章节模式：按行首「第X章/回/卷/部」切
-  function splitByChapter(text) {
-    const sep = (getSettings().chapterSeparator || '第').trim();
-    if (sep === '第') {
-      // 按行首「第X章/回/卷/部」切，lookahead 不吞标题
-      const re = /\n(?=第[一二三四五六七八九十百千万0-9０-９]+[章节回卷部])/g;
-      return text.split(re).map((s) => s.trim()).filter(Boolean);
+  // 扫描全文，判断属于哪种章节格式；检测不到返回 mode:'char' 让上层降级
+  function detectChapterFormat(text) {
+    const clean = (text || '').replace(/\r\n/g, '\n').trim();
+    const empty = { mode: 'char', label: '', count: 0, headingRe: null };
+    if (!clean) return empty;
+    let di = 0;
+    let special = 0;
+    let num = 0;
+    let cnnum = 0;
+    for (const raw of clean.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (HEADING_DI_RE.test(line)) { di++; continue; }
+      if (HEADING_SPECIAL_RE.test(line)) { special++; continue; }
+      if (HEADING_NUM_RE.test(line)) { num++; continue; }
+      if (HEADING_CNNUM_RE.test(line)) cnnum++;
     }
-    return text.split(sep).map((s) => s.trim()).filter(Boolean);
+    if (di + special >= 2) {
+      return { mode: 'chapter', label: '第X章/序章等标题', count: di + special, headingRe: HEADING_DI_SPECIAL_RE };
+    }
+    if (num >= 3) return { mode: 'chapter', label: '数字序号', count: num, headingRe: HEADING_NUM_RE };
+    if (cnnum >= 3) return { mode: 'chapter', label: '中文序号', count: cnnum, headingRe: HEADING_CNNUM_RE };
+    return empty;
+  }
+
+  // —— 文本切分（导入时自动检测章节格式，检测不到再走字数切分）——
+  function splitChapters(text) {
+    const detected = detectChapterFormat(text);
+    if (detected.mode === 'chapter') {
+      state.detectedFormat = detected.label;
+      return { chapters: splitByChapter(text, detected.headingRe), detected: detected, fallback: false };
+    }
+    state.detectedFormat = '';
+    // 用户手动选了「按章节」却检测不到标题，算降级，导入后要提示
+    const manualChapter = (getSettings().splitMode || 'char') === 'chapter';
+    return { chapters: splitBySize(text), detected: detected, fallback: manualChapter };
+  }
+
+  // 章节模式：按标题行切，支持第X章/序章/番外/数字序号/中文序号
+  function splitByChapter(text, headingRe) {
+    const clean = (text || '').replace(/\r\n/g, '\n').trim();
+    if (!clean) return [];
+    const re = headingRe || HEADING_DI_SPECIAL_RE;
+    const parts = [];
+    let cur = [];
+    for (const line of clean.split('\n')) {
+      if (re.test(line.trim())) {
+        if (cur.join('\n').trim()) parts.push(cur.join('\n'));
+        cur = [line];
+      } else {
+        cur.push(line);
+      }
+    }
+    if (cur.join('\n').trim()) parts.push(cur.join('\n'));
+    return parts.map((s) => s.trim()).filter(Boolean);
   }
 
   // 字数模式：按目标字数切，尽量在句末/换行处断开，避免拦腰斩句
@@ -241,11 +303,19 @@
         }
       }
 
-      state.chapters = splitChapters(text);
+      const splitResult = splitChapters(text);
+      state.chapters = splitResult.chapters;
       state.index = 0;
       state.chatId = null;
       await saveChapters();
-      renderStatus('已导入 ' + state.chapters.length + ' ' + unitWord());
+      if (splitResult.detected.mode === 'chapter') {
+        renderStatus('已导入 ' + state.chapters.length + ' 章（检测到章节格式：' + splitResult.detected.label + '，共 ' + splitResult.detected.count + ' 个标题）');
+      } else if (splitResult.fallback) {
+        renderStatus('未检测到章节标题，已降级按字数切分，共 ' + state.chapters.length + ' 段');
+      } else {
+        renderStatus('已导入 ' + state.chapters.length + ' 段（未检测到章节标题，按字数切分）');
+      }
+      renderToc();
       renderChapterPreview();
       // 导入后立即注入第一段，保证第一条消息时 {{getvar::}} 已就位
       await advanceChapter();
@@ -334,6 +404,7 @@
       }
       renderStatus(msg);
       renderChapterPreview();
+      syncTocSelection();
       // 手动注入时给用户明确的成功反馈（toast 气泡 + 按钮文字闪一下）
       if (options.toast) notifyInjected(msg);
     }
@@ -376,6 +447,7 @@
 
   // —— 单位词：章节模式叫「章」，字数模式叫「段」——
   function unitWord() {
+    if (state.detectedFormat) return '章';
     return getSettings().splitMode === 'char' ? '段' : '章';
   }
 
@@ -400,6 +472,60 @@
     }
     const cur = state.chapters[state.index] || '';
     el.textContent = cur.length > 200 ? cur.slice(0, 200) + '…' : cur;
+  }
+
+  // —— 目录：提取每段的标题（标题行或段开头若干字）——
+  function getChapterTitle(idx) {
+    const ch = state.chapters[idx];
+    if (!ch) return '';
+    const firstLine = ch.split('\n').map((s) => s.trim()).find(Boolean) || '';
+    const t = firstLine || ch.trim();
+    if (isHeadingLine(t)) {
+      return t.length > 28 ? t.slice(0, 28) + '…' : t;
+    }
+    const flat = t.replace(/\s+/g, ' ');
+    return flat.length > 20 ? flat.slice(0, 20) + '…' : flat;
+  }
+
+  function renderToc() {
+    const sel = document.getElementById('nci-toc');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '—— 选择要跳转的段落 ——';
+    sel.appendChild(ph);
+    state.chapters.forEach((ch, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i + 1);
+      opt.textContent = (i + 1) + '. ' + getChapterTitle(i);
+      sel.appendChild(opt);
+    });
+    if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  }
+
+  // 同步目录下拉的选中项到当前进度（注入后调用）
+  function syncTocSelection() {
+    const sel = document.getElementById('nci-toc');
+    if (!sel) return;
+    const v = String(state.index);
+    if (state.index >= 1 && [...sel.options].some((o) => o.value === v)) sel.value = v;
+  }
+
+  // —— 手动跳转：定位到第 N 段并注入，进度推进到 N+1 ——
+  async function jumpToIndex(n) {
+    if (!state.chapters.length) {
+      renderStatus('尚未导入小说');
+      return;
+    }
+    if (!Number.isFinite(n) || n < 1 || n > state.chapters.length) {
+      renderStatus('段号超出范围（1 ~ ' + state.chapters.length + '）');
+      return;
+    }
+    state.index = n - 1;
+    await saveChapters();
+    await advanceChapter({ toast: true });
   }
 
   async function renderPanel() {
@@ -436,6 +562,7 @@
       renderStatus('未导入');
     }
     renderChapterPreview();
+    renderToc();
     ensureManualInjectButton();
   }
 
@@ -468,6 +595,9 @@
     const autoCheck = document.getElementById('nci-auto');
     const manualCheck = document.getElementById('nci-manual');
     const loopCheck = document.getElementById('nci-loop');
+    const tocSel = document.getElementById('nci-toc');
+    const jumpInput = document.getElementById('nci-jump');
+    const jumpBtn = document.getElementById('nci-jump-btn');
 
     // 点醒目的「导入」按钮，触发隐藏的 file input 打开文件选择框。
     if (importBtn && fileInput) {
@@ -526,6 +656,21 @@
     }
     if (nextBtn) {
       nextBtn.addEventListener('click', () => advanceChapter());
+    }
+
+    // —— 目录下拉 + 手动跳转 ——
+    if (tocSel) {
+      tocSel.addEventListener('change', () => {
+        const n = Number(tocSel.value);
+        if (n >= 1) jumpToIndex(n);
+      });
+    }
+    if (jumpBtn && jumpInput) {
+      const doJump = () => jumpToIndex(Number(jumpInput.value));
+      jumpBtn.addEventListener('click', doJump);
+      jumpInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doJump();
+      });
     }
 
     // —— 推进模式：自动推进 / 手动注入 互斥 ——
@@ -699,6 +844,7 @@
   window[MODULE_NAME] = {
     init: init,
     advanceChapter: advanceChapter,
+    jumpToIndex: jumpToIndex,
   };
 
   // 页面卸载时清理定时器与事件，避免泄漏
