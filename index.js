@@ -123,6 +123,7 @@
       const raw = await localforage.getItem(MODULE_NAME + ':rawText');
       if (typeof raw === 'string' && raw) state.rawText = raw;
       await loadIndexForCurrentChat();
+      await reconcileVariable();
     } catch (e) {
       /* 静默 */
     }
@@ -135,6 +136,24 @@
       const index = await localforage.getItem(MODULE_NAME + ':index:' + chatId);
       state.index = Number(index) || 0;
       state.chatId = chatId;
+    } catch (e) {
+      /* 静默 */
+    }
+  }
+
+  // 对账：重启后若正文变量丢失，用当前进度补写，保证 {{getvar::}} 与进度对齐。
+  // 只在变量为空时才补写，避免覆盖掉正常落盘的内容。
+  async function reconcileVariable() {
+    if (!state.chapters.length) return;
+    try {
+      const vars = getChatVariables();
+      if (!vars) return;
+      const name = getSettings().variableName;
+      if (!name || vars[name]) return; // 变量还在则不动
+      const idx = Math.min(Math.max(state.index, 0), state.chapters.length - 1);
+      const content = state.chapters[idx] || '';
+      if (!content) return;
+      await writeChapterToVariable(content);
     } catch (e) {
       /* 静默 */
     }
